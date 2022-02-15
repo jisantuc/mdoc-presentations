@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Decline for Ciris Users</title>
+  <meta charset="utf-8">
+  <style>
+    @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+    @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+    @import url(https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic);
+
+    body {
+      font-family: 'Droid Serif', 'Helvetica';
+      /*line-height: 1.25em;*/
+    }
+
+    li {
+      margin: 10px 0;
+    }
+
+    h1,
+    h2,
+    h3 {
+      font-family: 'Yanone Kaffeesatz', 'Gill Sans';
+      font-weight: normal;
+    }
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .remark-code,
+    .remark-inline-code {
+      font-family: 'Ubuntu Mono', 'Consolas', 'Courier New';
+    }
+  </style>
+</head>
+
+<body>
+  <textarea id="source">
+
+class: center, middle
+
+# Decline for Ciris Users
+James Santucci • `@jisantuc`
+
+@47Degrees / @jisantuc
+
+???
+
+Questions at the end
+
+---
+
+class: center, middle
+
+# App configuration
+
+---
+
+## What's configuration for?
+
+- protect secrets
+- redeploy applications without source changes 
+
+---
+
+## Example configuration changes
+
+- database password changed -- change a non-empty string
+- turn on debug logs -- choose one of `DEBUG`, `INFO`, etc.
+
+---
+
+## More complicated config examples
+
+- point to a whole new database that lives somewhere else
+
+```scala mdoc
+// treat these as newtypes for non-empty strings
+type DatabaseUser = String
+type DatabaseHost = String
+type DatabasePassword = String
+
+case class DatabaseConfig(
+  dbUser: DatabaseUser,
+  dbHost: DatabaseHost,
+  dbPassword: DatabasePassword
+)
+```
+
+---
+
+## More complicate config examples
+
+- use _either_ a Redis or Memcached caching backend
+
+```scala mdoc
+type HostName = String
+sealed abstract class CacheConfig
+case class RedisConfig(redisHost: HostName) extends CacheConfig
+case class MemcachedConfig(memachedHost: HostName) extends CacheConfig
+```
+
+---
+
+## More complicated config examples
+
+- update a feature flags bitstring -- change a fixed-length string made up of ones and zeroes
+
+```scala mdoc:invisible
+import enumeratum.{CirisEnum, Enum, EnumEntry}
+```
+
+```scala mdoc
+sealed trait DashboardVersion extends EnumEntry
+
+object DashboardVersion
+    extends Enum[DashboardVersion] with CirisEnum[DashboardVersion] {
+  case object V1 extends DashboardVersion
+  case object V2 extends DashboardVersion
+
+  val values = findValues
+}
+
+case class FeatureFlags(
+  fancyNewServer: Boolean,
+  passwordlessAuth: Boolean,
+  dashboardVersion: DashboardVersion
+)
+```
+
+---
+
+## The standard FP toolbox
+
+- we have product types, like case classes
+- we have sum types, like `DashboardVersion` and log levels
+- we have to go from _something_ to values in our domain
+
+---
+
+## The standard FP toolbox
+
+- represent capability as a typeclass, i.e., having an instance of whatever the typeclass is
+  means we can read values of that type from *wherever config lives*
+- build more complicated types with combinators
+
+---
+
+class: center, middle
+
+# Ciris
+
+---
+
+## Reading config in Ciris
+
+- `ConfigDecoder[A, B]`
+- represents possibility of converting from `A` to `B`
+
+```scala
+/**
+  * Decodes configuration values from a first type to a second type.
+  */
+sealed abstract class ConfigDecoder[A, B] {
+  // ...
+  def decode(key: Option[ConfigKey], value: A): Either[ConfigError, B]
+}
+```
+
+---
+
+## Converting values in ciris
+
+- `ConfigDecoder[A, B]` with `B => C`
+- `ConfigDecoder[A, B]` and `ConfigDecoder[B, C]` with `(B, C) => D`
+- `ConfigDecoder[A, B]` with `B => ConfigDecoder[A, C]`
+
+---
+
+## Ciris example -- simple values
+
+```scala mdoc:invisible
+import ciris._
+import cats.syntax.all._
+```
+
+```scala mdoc
+case class User(name: String)
+env("USER")
+env("USER").map(User)
+```
+
+---
+
+## Ciris example -- sum types
+
+- not evaluated because `mdoc` is mad
+
+```scala
+env("DASHBOARD_VERSION").as[DashboardVersion]
+
+(env("CACHE_BACKEND"), env("CACHE_HOST")).parMapN { 
+  case (s, host) if s.toLowerCase() == "redis" => RedisConfig(host)
+  case (_, host)                               => MemcachedConfig(host)
+}
+```
+
+---
+
+## Ciris example -- product types
+
+- not evaluated because `mdoc` is mad
+
+```scala
+val dbOptions = (env("DB_USER"), env("DB_HOST"), env("DB_PASSWORD")).parMapN(
+  DatabaseConfig(_, _, _)
+)
+```
+
+- from above examples, it should be clear how to build the feature flags
+  config from its components
+
+---
+
+class: center, middle
+
+# Decline
+
+---
+
+## Decline
+
+- like Ciris, Decline can read from the environment
+- capability in decline is instead wrapped up in the `Argument` typeclass:
+
+```scala
+trait Argument[A] { self =>
+
+  /**
+   * Attempt to parse a single command-line argument: given an argument, this returns either the
+   * parsed value or a message explaining the failure.
+   */
+  def read(string: String): ValidatedNel[String, A]
+  // ...
+}
+```
+
+---
+
+## Comparing Decline with Ciris
+
+```scala
+//                      1.          2.          3.         4.
+def read(       string: String): ValidatedNel[String,      A]
+def decode(...,  value: A):      Either[      ConfigError, B]
+```
+
+1. the input type for producing a configured value
+2. a functor representing the possibility of failure
+3. the type that holds failure i nformation, if there is any
+4. a configured value of the type we care about
+
+---
+
+## Comparing Decline with Ciris
+
+![config-sources](./config-sources.png)
+
+---
+
+## Config source UX
+
+- config: should fail at startup
+- no standard sense of what should happen when env is wrong
+- really developed sense of what should happen when CLI is wrong
+- to provide this feedback, Decline wants more from us for simple options
+
+```scala mdoc
+
+import com.monovore.decline._
+
+// ciris version: env("DB_USER")
+// decline version:
+val dbUserOpt = Opts.env[DatabaseUser]("DB_USER", help = "The name of the database user")
+```
+
+---
+
+## Config source UX
+
+Asking for more info lets Decline present errors in a nice, CLI-friendly way:
+
+```scala mdoc
+val command = Command(name = "connect-to-db", header = "Connect to the database")(dbUserOpt)
+
+//                                1.       2.
+val parseError = command.parse(Seq.empty, env = Map.empty).left.get
+```
+
+1. command line arguments and flags passed to the program at runtime
+2. the available environment at runtime (`Map.empty` by default, set to `sys.env` to pass the system environment)
+
+---
+
+## Decline example -- simple values
+
+```scala mdoc
+// keep one of these handy for examples
+val h = "some help text"
+
+// we can read anything with Argument[A]
+Opts.env[String]("DB_USER", help = h)
+Opts.env[Int]("DB_PORT", help = h)
+```
+
+```scala mdoc:invisible
+val dbUser = Opts.env[String]("DB_USER", help = h)
+val dbHost = Opts.env[String]("DB_HOST", help = h)
+val dbPassword = Opts.env[String]("DB_PASSWORD", help = h)
+val dbOptions = (dbUser, dbHost, dbPassword) mapN { DatabaseConfig }
+```
+
+---
+
+## Decline example -- sum types
+
+```scala mdoc:invisible
+import com.monovore.decline.enumeratum._
+```
+
+```scala mdoc
+val dashboardOpt = Opts.env[DashboardVersion]("DASHBOARD_VERSION", help = h)
+
+// need the type annotation unfortunately otherwise we get Opts[Product with Serializable]
+val cacheOpt: Opts[CacheConfig] = (
+  Opts.env[String]("CACHE_BACKEND", help = h),
+  Opts.env[String]("CACHE_HOST", help = h)
+).mapN {
+  case (s, host) if s.toLowerCase() == "redis" => RedisConfig(host)
+  case (_, host)                               => MemcachedConfig(host)
+}
+```
+---
+
+## Decline examples -- product types
+
+```scala
+val serverOpt = Opts.env[Boolean]("USE_NEW_SERVER", help = h).orFalse
+val authOpt = Opts.env[Boolean]("PASSWORDLESS", help = h).orFalse
+
+(serverOpt, authOpt, dashboardOpt).mapN { FeatureFlags }
+
+// error: No Argument instance found for Boolean.
+```
+
+---
+
+class: center, middle
+
+# Decline for command line args
+
+---
+
+## Decline for command line args
+
+- the last example failed because there's [intentionally no `Argument[Boolean]` instance](https://ben.kirw.in/decline/arguments.html#missing-instances)
+- wasn't Decline supposed to be focused on command line usage?
+
+---
+
+## Decline for command line usage - simple values
+
+- command line args are similar to env variables
+
+```scala mdoc:silent
+val serverOpt = Opts.flag( // 1.
+  "use-new-server", // 2.
+  h, // 3.
+  "n", // 4.
+).orFalse // 5.
+```
+
+1. `flag` creates a command line argument that becomes an `Opts[Boolean]`
+2. the long name of the argument, e.g. `--use-new-server`
+3. the argument's help text
+4. the short name of the argument, e.g. `-n`
+5. the `orFalse` combinator defaults the value to `false` if the argument isn't passed
+
+```scala mdoc:invisible
+val passwordlessOpt = Opts.flag("passwordless", h, "-p").orFalse
+```
+
+---
+
+## Decline for command line usage
+
+- some values aren't booleans [citation needed], but the API is similar
+
+```scala mdoc:silent
+val dashboardVersionOpt = Opts.option[DashboardVersion]( // 1.
+  "dashboard-version", // 2.
+  h, // 3.
+  "d" // 4.
+).withDefault(DashboardVersion.V1)
+```
+
+---
+
+## Decline for command line usage
+
+- _now_ with flags and our dashboard version option, we can finally parse feature flag configuration
+
+```scala mdoc:silent
+val serverOptions = (serverOpt, passwordlessOpt, dashboardVersionOpt).mapN(FeatureFlags(_, _, _))
+```
+---
+
+class: center, middle
+
+# Higher level composability
+
+---
+
+## Higher level composability
+
+- before we saw `Command`
+- we can combine options into a `Command`
+- can we combine several `Commands`? Into what?
+- e.g. `git head` / `git commit` or `docker run` / `docker exec`, etc.
+
+---
+
+## `Subcommands`
+
+- for assembling _several_ commands, use `Subcommands`
+
+```scala mdoc:silent
+sealed abstract class ProgramMode // 1.
+case class RunMigrations(dbConfig: DatabaseConfig) extends ProgramMode
+case class RunServer(dbConfig: DatabaseConfig, featureFlags: FeatureFlags)
+  extends ProgramMode
+
+val runMigrationsCmd = Opts.subcommand(
+  Command(name = "migrate", header = "Run migrations") {
+    dbOptions.map(RunMigrations)
+  }
+) 
+val runServerCmd = Opts.subcommand(
+  Command(name = "server", header = "Run the server") {
+    (dbOptions, serverOptions).mapN(RunServer) 
+  }
+) // 2.
+val appCmd: Command[ProgramMode] =
+  Command(name = "app", header = "Run the app") {
+    runMigrationsCmd orElse runServerCmd
+  } // 3.
+```
+
+1. Create an ADT for the different ways to run the program
+2. Add `Opts.subcommand` options for each of the leaves of the ADT
+3. Create an outer command wrapping the inner command options
+
+---
+
+## `Subcommands`
+
+- Once you have your subcommand, you can parse input and do what you want with errors
+
+```scala mdoc
+def main(args: Array[String]): Unit =
+  appCmd.parse(args) match {
+    case Right(RunMigrations(_)) => ???
+    case Right(RunServer(_, _)) => ???
+    case _ => throw new Exception("oh no")
+  }
+```
+
+---
+
+## Command apps
+
+- "parse, do something if successful, otherwise print help text" is a really common pattern
+- wrapped up in `CommandApp`:
+
+```scala mdoc
+
+val appMainCmd = appCmd map {
+  case RunMigrations(_) => println("migrations")
+  case RunServer(_, _) => println("run server")
+}
+object App extends CommandApp(appMainCmd)
+```
+
+---
+
+## Cats-Effect
+
+```scala mdoc:invisible
+import cats.effect._
+import com.monovore.decline.effect._
+```
+
+- `CommandApp` works when you run to a `Unit`
+- `CommandIOApp` works the same when you run to an `IO[ExitCode]`
+
+```scala mdoc:silent
+val appIOOpts = (runMigrationsCmd orElse runServerCmd) map {
+  case RunMigrations(_) => IO.delay(println("migrations")).as(ExitCode.Success)
+  case RunServer(_, _) => IO.delay(println("run server")).as(ExitCode.Success)
+}
+
+object AppIO extends CommandIOApp(
+  name = "demo-app",
+  header = "a demo of decline features",
+  version = "0.0.1"
+) {
+  override def main: Opts[IO[ExitCode]] = appIOOpts
+}
+```
+
+- note the slightly different API! you can't just re-use the command directly
+  when extending the class
+
+---
+
+class: center, middle
+
+# Thanks!
+Code and slides at `jisantuc/intro-cats-effect` on GitHub
+
+## Questions?
+
+ </textarea>
+  <script src="remark-latest.min.js">
+  </script>
+  <script>
+    var slideshow = remark.create();
+  </script>
+</body>
+
+</html>
