@@ -21,3 +21,9 @@ _site/
 .bloop/
 project/.bloop/
 .bsp/
+metals.sbt
+
+# mdoc puts compile output in docs
+docs
+
+.vscode

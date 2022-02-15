@@ -17,27 +17,22 @@ lazy val baseSettings: Seq[Setting[_]] = Seq(
   resolvers += Resolver.sonatypeRepo("releases")
 )
 
-lazy val `intro-cats-effect` = project
-  .in(file("."))
-  .settings(moduleName := "intro-cats-effect")
-  .settings(baseSettings: _*)
-  .aggregate(core, slides)
-  .dependsOn(core, slides)
-
-lazy val core = project
-  .settings(moduleName := "intro-cats-effect-core")
-  .settings(baseSettings: _*)
-  .settings(
-    libraryDependencies ++= Seq("org.typelevel" %% "cats-effect" % "3.2.0")
-  )
-
-lazy val slides = project
-  .settings(moduleName := "intro-cats-effect-slides")
+lazy val `decline-for-ciris` = project
+  .in(file("decline-for-ciris"))
+  .settings(moduleName := "decline-for-ciris")
   .settings(baseSettings: _*)
   .settings(
     mdocIn := baseDirectory.value / "mdoc",
-    mdocOut := baseDirectory.value / "../docs",
-    watchSources ++= (mdocIn.value ** "*.html").get
+    mdocOut := baseDirectory.value / "./docs",
+    watchSources ++= (mdocIn.value ** "*.html").get,
+    libraryDependencies ++= Seq(
+      "com.beachape" %% "enumeratum" % "1.7.0",
+      "com.monovore" %% "decline" % "2.2.0",
+      "com.monovore" %% "decline-effect" % "2.2.0",
+      "com.monovore" %% "decline-enumeratum" % "2.0.0",
+      "is.cir" %% "ciris" % "2.3.2",
+      "is.cir" %% "ciris-enumeratum" % "2.3.2",
+      "org.typelevel" %% "cats-core" % "2.7.0"
+    )
   )
-  .dependsOn(core)
   .enablePlugins(MdocPlugin)
