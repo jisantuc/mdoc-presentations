@@ -78,7 +78,7 @@ class: center, middle
 
 - point to a whole new database that lives somewhere else
 
-```scala mdoc
+```scala
 // treat these as newtypes for non-empty strings
 type DatabaseUser = String
 type DatabaseHost = String
@@ -97,7 +97,7 @@ case class DatabaseConfig(
 
 - use _either_ a Redis or Memcached caching backend
 
-```scala mdoc
+```scala
 type HostName = String
 sealed abstract class CacheConfig
 case class RedisConfig(redisHost: HostName) extends CacheConfig
@@ -110,11 +110,8 @@ case class MemcachedConfig(memachedHost: HostName) extends CacheConfig
 
 - update a feature flags bitstring -- change a fixed-length string made up of ones and zeroes
 
-```scala mdoc:invisible
-import enumeratum.{CirisEnum, Enum, EnumEntry}
-```
 
-```scala mdoc
+```scala
 sealed trait DashboardVersion extends EnumEntry
 
 object DashboardVersion
@@ -183,15 +180,13 @@ sealed abstract class ConfigDecoder[A, B] {
 
 ## Ciris example -- simple values
 
-```scala mdoc:invisible
-import ciris._
-import cats.syntax.all._
-```
 
-```scala mdoc
+```scala
 case class User(name: String)
 env("USER")
+// res0: ConfigValue[Effect, String] = ConfigValue$406101096
 env("USER").map(User)
+// res1: ConfigValue[Effect, User] = ConfigValue$153486647
 ```
 
 ---
@@ -279,13 +274,16 @@ def decode(...,  value: A):      Either[      ConfigError, B]
 - really developed sense of what should happen when CLI is wrong
 - to provide this feedback, Decline wants more from us for simple options
 
-```scala mdoc
-
+```scala
 import com.monovore.decline._
 
 // ciris version: env("DB_USER")
 // decline version:
 val dbUserOpt = Opts.env[DatabaseUser]("DB_USER", help = "The name of the database user")
+// dbUserOpt: Opts[DatabaseUser] = Validate(
+//   Env("DB_USER", "The name of the database user", "string"),
+//   com.monovore.decline.Opts$$$Lambda$71132/774344536@728a2268
+// )
 ```
 
 ---
@@ -294,11 +292,26 @@ val dbUserOpt = Opts.env[DatabaseUser]("DB_USER", help = "The name of the databa
 
 Asking for more info lets Decline present errors in a nice, CLI-friendly way:
 
-```scala mdoc
+```scala
 val command = Command(name = "connect-to-db", header = "Connect to the database")(dbUserOpt)
+// command: Command[DatabaseUser] = com.monovore.decline.Command@6d7af31
 
 //                                1.       2.
 val parseError = command.parse(Seq.empty, env = Map.empty).left.get
+// parseError: Help = Help(
+//   List("Missing expected environment variable (DB_USER)!"),
+//   NonEmptyList("connect-to-db", List()),
+//   List(""),
+//   List(
+//     "Connect to the database",
+//     """Options and flags:
+//     --help
+//         Display this help text.""",
+//     """Environment Variables:
+//     DB_USER=<string>
+//         The name of the database user"""
+//   )
+// )
 ```
 
 1. command line arguments and flags passed to the program at runtime
@@ -308,32 +321,36 @@ val parseError = command.parse(Seq.empty, env = Map.empty).left.get
 
 ## Decline example -- simple values
 
-```scala mdoc
+```scala
 // keep one of these handy for examples
 val h = "some help text"
+// h: String = "some help text"
 
 // we can read anything with Argument[A]
 Opts.env[String]("DB_USER", help = h)
+// res2: Opts[String] = Validate(
+//   Env("DB_USER", "some help text", "string"),
+//   com.monovore.decline.Opts$$$Lambda$71132/774344536@524d342a
+// )
 Opts.env[Int]("DB_PORT", help = h)
+// res3: Opts[Int] = Validate(
+//   Env("DB_PORT", "some help text", "integer"),
+//   com.monovore.decline.Opts$$$Lambda$71132/774344536@7b24fb11
+// )
 ```
 
-```scala mdoc:invisible
-val dbUser = Opts.env[String]("DB_USER", help = h)
-val dbHost = Opts.env[String]("DB_HOST", help = h)
-val dbPassword = Opts.env[String]("DB_PASSWORD", help = h)
-val dbOptions = (dbUser, dbHost, dbPassword) mapN { DatabaseConfig }
-```
 
 ---
 
 ## Decline example -- sum types
 
-```scala mdoc:invisible
-import com.monovore.decline.enumeratum._
-```
 
-```scala mdoc
+```scala
 val dashboardOpt = Opts.env[DashboardVersion]("DASHBOARD_VERSION", help = h)
+// dashboardOpt: Opts[DashboardVersion] = Validate(
+//   Env("DASHBOARD_VERSION", "some help text", "value"),
+//   com.monovore.decline.Opts$$$Lambda$71132/774344536@230cdefe
+// )
 
 // need the type annotation unfortunately otherwise we get Opts[Product with Serializable]
 val cacheOpt: Opts[CacheConfig] = (
@@ -343,6 +360,22 @@ val cacheOpt: Opts[CacheConfig] = (
   case (s, host) if s.toLowerCase() == "redis" => RedisConfig(host)
   case (_, host)                               => MemcachedConfig(host)
 }
+// cacheOpt: Opts[CacheConfig] = App(
+//   Pure(cats.SemigroupalArityFunctions$$Lambda$71160/42193806@f781a80),
+//   App(
+//     App(
+//       Pure(cats.Apply$$Lambda$71158/1483200936@342f9321),
+//       Validate(
+//         Env("CACHE_BACKEND", "some help text", "string"),
+//         com.monovore.decline.Opts$$$Lambda$71132/774344536@688f0ac6
+//       )
+//     ),
+//     Validate(
+//       Env("CACHE_HOST", "some help text", "string"),
+//       com.monovore.decline.Opts$$$Lambda$71132/774344536@2db1c207
+//     )
+//   )
+// )
 ```
 ---
 
@@ -376,7 +409,7 @@ class: center, middle
 
 - command line args are similar to env variables
 
-```scala mdoc:silent
+```scala
 val serverOpt = Opts.flag( // 1.
   "use-new-server", // 2.
   h, // 3.
@@ -390,9 +423,6 @@ val serverOpt = Opts.flag( // 1.
 4. the short name of the argument, e.g. `-n`
 5. the `orFalse` combinator defaults the value to `false` if the argument isn't passed
 
-```scala mdoc:invisible
-val passwordlessOpt = Opts.flag("passwordless", h, "-p").orFalse
-```
 
 ---
 
@@ -400,7 +430,7 @@ val passwordlessOpt = Opts.flag("passwordless", h, "-p").orFalse
 
 - some values aren't booleans [citation needed], but the API is similar
 
-```scala mdoc:silent
+```scala
 val dashboardVersionOpt = Opts.option[DashboardVersion]( // 1.
   "dashboard-version", // 2.
   h, // 3.
@@ -414,7 +444,7 @@ val dashboardVersionOpt = Opts.option[DashboardVersion]( // 1.
 
 - _now_ with flags and our dashboard version option, we can finally parse feature flag configuration
 
-```scala mdoc:silent
+```scala
 val serverOptions = (serverOpt, passwordlessOpt, dashboardVersionOpt).mapN(FeatureFlags(_, _, _))
 ```
 ---
@@ -438,7 +468,7 @@ class: center, middle
 
 - for assembling _several_ commands, use `Subcommands`
 
-```scala mdoc:silent
+```scala
 sealed abstract class ProgramMode // 1.
 case class RunMigrations(dbConfig: DatabaseConfig) extends ProgramMode
 case class RunServer(dbConfig: DatabaseConfig, featureFlags: FeatureFlags)
@@ -470,7 +500,7 @@ val appCmd: Command[ProgramMode] =
 
 - Once you have your subcommand, you can parse input and do what you want with errors
 
-```scala mdoc
+```scala
 def main(args: Array[String]): Unit =
   appCmd.parse(args) match {
     case Right(RunMigrations(_)) => ???
@@ -486,12 +516,12 @@ def main(args: Array[String]): Unit =
 - "parse, do something if successful, otherwise print help text" is a really common pattern
 - wrapped up in `CommandApp`:
 
-```scala mdoc
-
+```scala
 val appMainCmd = appCmd map {
   case RunMigrations(_) => println("migrations")
   case RunServer(_, _) => println("run server")
 }
+// appMainCmd: Command[Unit] = com.monovore.decline.Command@62d2712b
 object App extends CommandApp(appMainCmd)
 ```
 
@@ -499,15 +529,11 @@ object App extends CommandApp(appMainCmd)
 
 ## Cats-Effect
 
-```scala mdoc:invisible
-import cats.effect._
-import com.monovore.decline.effect._
-```
 
 - `CommandApp` works when you run to a `Unit`
 - `CommandIOApp` works the same when you run to an `IO[ExitCode]`
 
-```scala mdoc:silent
+```scala
 val appIOOpts = (runMigrationsCmd orElse runServerCmd) map {
   case RunMigrations(_) => IO.delay(println("migrations")).as(ExitCode.Success)
   case RunServer(_, _) => IO.delay(println("run server")).as(ExitCode.Success)
