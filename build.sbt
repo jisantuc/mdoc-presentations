@@ -16,9 +16,9 @@ lazy val baseSettings: Seq[Setting[_]] = Seq(
 )
 
 lazy val mdocModule: Seq[Setting[_]] = Seq(
-    mdocIn := baseDirectory.value / "mdoc",
-    mdocOut := baseDirectory.value / "./docs",
-    watchSources ++= (mdocIn.value ** "*.html").get,
+  mdocIn := baseDirectory.value / "mdoc",
+  mdocOut := baseDirectory.value / "./docs",
+  watchSources ++= (mdocIn.value ** "*.html").get
 )
 
 lazy val `decline-for-ciris` = project
@@ -46,7 +46,8 @@ lazy val `byo-web-token` = project
   .settings(mdocModule: _*)
   .settings(
     libraryDependencies ++= Seq(
-
+      "com.chuusai" %% "shapeless" % "2.3.9",
+      "org.typelevel" %% "cats-core" % "2.7.0"
     )
   )
   .enablePlugins(MdocPlugin)

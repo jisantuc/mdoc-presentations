@@ -26,8 +26,8 @@
     }
 
     img {
-      width: 100%;
-      height: 100%;
+      width: 75%;
+      height: 75%;
       object-fit: contain;
     }
 
@@ -58,10 +58,181 @@ class: center, middle
 
 ---
 
+## Some properties of "web tokens"
+
+- web: should be URL safe, not be so huge that you care about it for bandwidth
+- token: should be some kind of magic random string looking thing, not meaningful on its own
+
+---
+
+## Some tokens
+
+- secret
+- All happy families are alike, but every unhappy family is unhappy in its own way
+- 😎🎉🚩🐻🎯
+- more familiar tokens like:
+```
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJzdWIiOiJhYmprbHNqZGZsa2EiLCJuYW1lIjoiSmFtZXMgUyIsImlhdCI6MTUxNjIzOTAyMn0.
+lFwutwLbDjwqKAJ0B_zrELX2lqomMeYzKINs9zQBNmI
+```
+
+---
+
+## What other properties?
+
+- `*waves hands*` _meaningful_? (i.e. "userId=james", not "😎🎉🚩🐻🎯")
+- "provably" valid?
+- safe from prying eyes?
+- extensible? (i.e. if the auth needs of services a and b calling the same
+  auth server differ, service b can add data to the token somehow)
+
+---
+
+## Pursuing token properties
+
+- meaningfulness: represent data from authentication / authorization domain in the token
+- validity: it should be possible to prove a token is a good token with (mostly) data contained in the token
+- security: data represented in the token should be legible only to its intended recipients
+- extensible: the data should be open-ended; if I claim something about myself that the auth server doesn't care about,
+  and it's otherwise happy with my request, it should verify my other claims as well
+
+---
+
+# BS Web Tokens
+
+---
+
+## BS Web Tokens
+
+<!-- - BS stands for "bad serialization" -->
+
+<img src="./fry-trolling-small.png"/>
+
+---
+
+# Meaningfulness
+
+---
+
+## Meaningfulness
+
+- going to build a serialization format from scratch that's very simple
+
+```scala
+case class Foo(x: Int, y: String, z: List[Int])
+Foo(3, "abc", List(3, 4, 5))
+// => x=3;y="abc";z=[3,4,5]
+```
+
+- then GZip it to make it small
+- parsing: don't worry about order, just all the fields have to be there
+
+---
+
+## Meaningfulness
+
+```scala
+sealed abstract class DecodeError extends Throwable
+case class MissingField(fieldName: String) extends DecodeError
+case class IncompatibleFieldType(fieldName: String, unparseableValue: String) extends DecodeError
+case class IncorrectSyntax(parsingError: String) extends DecodeError
+
+trait BSEncoder[A] {
+  def encode(a: A): String
+}
+```
+
+---
+
+## Meaningfulness
+
+```scala
+object BSEncoder {
+  def apply[A](implicit ev: BSEncoder[A]): BSEncoder[A] = ev
+}
+implicit val encBool: BSEncoder[Boolean] = { (a: Boolean) => s"$a" }
+implicit val encInt: BSEncoder[Int] = { (a: Int) => s"$a" } // 🤔
+// others
+```
+
+- repetitive! 
+
+```scala
+object BSEncoder {
+  def apply[A](implicit ev: BSEncoder[A]): BSEncoder[A] = ev
+  def forShow[A: Show]: BSEncoder[A] = new BSEncoder[A] { def encode(a: A) = Show[A].show(a) }
+  def forTuple[A: BSEncoder]: BSEncoder[(String, A)] = { case (s, a) =>
+    s"$s=${BSEncoder[A].encode(a)}"
+  }
+  implicit val encInt: BSEncoder[Int] = forShow[Int]
+  implicit val encBool: BSEncoder[Boolean] = forShow[Boolean]
+  // others...
+}
+```
+
+- and for convenience, we'll make it derivable for case classes (not shown)
+
+
+```scala
+BSEncoder[Foo].encode(Foo(3, "abc", List(3, 4, 5)))
+// res1: String = "x=3;y=\"$a\";z=[3;4;5]"
+```
+
+---
+
+## Meaningfulness
+
+- _we've done it_
+- we can take arbitrary domain information in case classes and represent it in our token in a super advanced serialization format
+- so for token format we can just GZip it and we're good to go
+
+```scala
+import java.util.zip.Deflater
+import java.util.Base64
+
+def toPlainTextToken[T: BSEncoder](value: T): String = {
+  val deflater = new Deflater()
+  val token = BSEncoder[T].encode(value)
+  val tokenBytes = token.getBytes
+  deflater.setInput(tokenBytes)
+  deflater.finish
+  val outArray = new Array[Byte](tokenBytes.size * 2)
+  val count: Int = deflater.deflate(outArray)
+  Base64.getEncoder().encodeToString(outArray.take(count))
+}
+
+toPlainTextToken(Foo(3, "abc", List(3, 4, 5)))
+// res2: String = "eJyrsDW2rrRVUklUsq6yjTa2NrE2jQUAOe8FXw=="
+```
+
+---
+
+# Validity
+
+---
+
+## Validity
+
+- how do we know that the claims in a token are trustworthy?
+- put differently, how do we know a client with a token isn't just making things up?
+
+---
+
+# Token security
+
+--- 
+
+## Token security
+
+- how do we prevent sensitive information in a token from falling into the wrong hands?
+- how can we design tokens such that users don't accidentally reveal information they don't intend to?
+
 ## words words words
 
 - abcde
 - dsfjkl
+
 ---
 
 ## Something
