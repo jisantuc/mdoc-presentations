@@ -38,3 +38,15 @@ lazy val `decline-for-ciris` = project
     )
   )
   .enablePlugins(MdocPlugin)
+
+lazy val `byo-web-token` = project
+  .in(file("byo-web-token"))
+  .settings(moduleName := "byo-web-token")
+  .settings(baseSettings: _*)
+  .settings(mdocModule: _*)
+  .settings(
+    libraryDependencies ++= Seq(
+
+    )
+  )
+  .enablePlugins(MdocPlugin)
