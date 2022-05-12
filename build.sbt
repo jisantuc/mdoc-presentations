@@ -1,5 +1,5 @@
 lazy val baseSettings: Seq[Setting[_]] = Seq(
-  scalaVersion := "2.12.14",
+  scalaVersion := "2.13.8",
   scalacOptions ++= Seq(
     "-deprecation",
     "-encoding",
@@ -9,22 +9,24 @@ lazy val baseSettings: Seq[Setting[_]] = Seq(
     "-language:implicitConversions",
     "-language:existentials",
     "-unchecked",
-    "-Yno-adapted-args",
     "-Ywarn-numeric-widen",
-    "-Ywarn-value-discard",
-    "-Xfuture"
+    "-Ywarn-value-discard"
   ),
   resolvers += Resolver.sonatypeRepo("releases")
+)
+
+lazy val mdocModule: Seq[Setting[_]] = Seq(
+    mdocIn := baseDirectory.value / "mdoc",
+    mdocOut := baseDirectory.value / "./docs",
+    watchSources ++= (mdocIn.value ** "*.html").get,
 )
 
 lazy val `decline-for-ciris` = project
   .in(file("decline-for-ciris"))
   .settings(moduleName := "decline-for-ciris")
   .settings(baseSettings: _*)
+  .settings(mdocModule: _*)
   .settings(
-    mdocIn := baseDirectory.value / "mdoc",
-    mdocOut := baseDirectory.value / "./docs",
-    watchSources ++= (mdocIn.value ** "*.html").get,
     libraryDependencies ++= Seq(
       "com.beachape" %% "enumeratum" % "1.7.0",
       "com.monovore" %% "decline" % "2.2.0",

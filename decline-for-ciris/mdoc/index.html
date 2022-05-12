@@ -298,7 +298,9 @@ Asking for more info lets Decline present errors in a nice, CLI-friendly way:
 val command = Command(name = "connect-to-db", header = "Connect to the database")(dbUserOpt)
 
 //                                1.       2.
-val parseError = command.parse(Seq.empty, env = Map.empty).left.get
+val parseError = command.parse(Seq.empty, env = Map.empty)
+  .swap
+  .getOrElse(throw new Exception("oh no"))
 ```
 
 1. command line arguments and flags passed to the program at runtime
@@ -472,7 +474,7 @@ val appCmd: Command[ProgramMode] =
 
 ```scala mdoc
 def main(args: Array[String]): Unit =
-  appCmd.parse(args) match {
+  appCmd.parse(args.toIndexedSeq) match {
     case Right(RunMigrations(_)) => ???
     case Right(RunServer(_, _)) => ???
     case _ => throw new Exception("oh no")
@@ -530,7 +532,8 @@ object AppIO extends CommandIOApp(
 class: center, middle
 
 # Thanks!
-Code and slides at `jisantuc/intro-cats-effect` on GitHub
+
+Code and slides at `jisantuc/mdoc-presentations` on GitHub
 
 ## Questions?
 
