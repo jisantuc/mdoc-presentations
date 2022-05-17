@@ -81,11 +81,10 @@ lFwutwLbDjwqKAJ0B_zrELX2lqomMeYzKINs9zQBNmI
 
 ## What other properties?
 
-- `*waves hands*` _meaningful_? (i.e. "userId=james", not "😎🎉🚩🐻🎯")
-- "provably" valid?
-- safe from prying eyes?
-- extensible? (i.e. if the auth needs of services a and b calling the same
-  auth server differ, service b can add data to the token somehow)
+- `*waves hands*` _meaningful_ (i.e. "userId=james", not "😎🎉🚩🐻🎯")
+- "provably" valid
+- safe from prying eyes
+- extensible (i.e. not so beholden to a rigid spec that we can't include information we care about)
 
 ---
 
@@ -94,18 +93,11 @@ lFwutwLbDjwqKAJ0B_zrELX2lqomMeYzKINs9zQBNmI
 - meaningfulness: represent data from authentication / authorization domain in the token
 - validity: it should be possible to prove a token is a good token with (mostly) data contained in the token
 - security: data represented in the token should be legible only to its intended recipients
-- extensible: the data should be open-ended; if I claim something about myself that the auth server doesn't care about,
-  and it's otherwise happy with my request, it should verify my other claims as well
+- extensible: I should be able to add to the data representable in the token at some later time
 
 ---
 
 # BS Web Tokens
-
----
-
-## BS Web Tokens
-
-<!-- - BS stands for "bad serialization" -->
 
 <img src="./fry-trolling-small.png"/>
 
@@ -122,22 +114,17 @@ lFwutwLbDjwqKAJ0B_zrELX2lqomMeYzKINs9zQBNmI
 ```scala
 case class Foo(x: Int, y: String, z: List[Int])
 Foo(3, "abc", List(3, 4, 5))
-// => x=3;y="abc";z=[3,4,5]
+// => goal is: x=3;y="abc";z=[3,4,5]
 ```
 
 - then GZip it to make it small
-- parsing: don't worry about order, just all the fields have to be there
+- then base64 encode it to make it look nice and token-y
 
 ---
 
 ## Meaningfulness
 
 ```scala
-sealed abstract class DecodeError extends Throwable
-case class MissingField(fieldName: String) extends DecodeError
-case class IncompatibleFieldType(fieldName: String, unparseableValue: String) extends DecodeError
-case class IncorrectSyntax(parsingError: String) extends DecodeError
-
 trait BSEncoder[A] {
   def encode(a: A): String
 }
@@ -145,7 +132,7 @@ trait BSEncoder[A] {
 
 ---
 
-## Meaningfulness
+## Meaningfulness + Extensibility
 
 ```scala
 object BSEncoder {
@@ -176,7 +163,7 @@ object BSEncoder {
 
 ```scala
 BSEncoder[Foo].encode(Foo(3, "abc", List(3, 4, 5)))
-// res1: String = "x=3;y=\"$a\";z=[3;4;5]"
+// res1: String = "x=3;y=\"abc\";z=[3,4,5]"
 ```
 
 ---
@@ -188,13 +175,10 @@ BSEncoder[Foo].encode(Foo(3, "abc", List(3, 4, 5)))
 - so for token format we can just GZip it and we're good to go
 
 ```scala
-import java.util.zip.Deflater
-import java.util.Base64
-
 def toPlainTextToken[T: BSEncoder](value: T): String = {
   val deflater = new Deflater()
   val token = BSEncoder[T].encode(value)
-  val tokenBytes = token.getBytes
+  val tokenBytes = token.getBytes(StandardCharsets.UTF_8)
   deflater.setInput(tokenBytes)
   deflater.finish
   val outArray = new Array[Byte](tokenBytes.size * 2)
@@ -203,8 +187,69 @@ def toPlainTextToken[T: BSEncoder](value: T): String = {
 }
 
 toPlainTextToken(Foo(3, "abc", List(3, 4, 5)))
-// res2: String = "eJyrsDW2rrRVUklUsq6yjTa2NrE2jQUAOe8FXw=="
+// res2: String = "eJyrsDW2rrRVSkxKVrKuso021jHRMY0FAEP/BeI="
 ```
+
+---
+
+## Meaningfulness
+
+- we've _almost_ done it
+- also have to be able to decode
+- going to wave hands and say "trust me it's real / works" for decoding, which it turns out is *way harder* than encoding
+
+
+```scala
+BSEncoder[Foo].encode(Foo(3, "abc", List(3, 4, 5)))
+// res3: String = "x=3;y=\"abc\";z=[3,4,5]"
+
+BSDecoder[Foo].decode(BSEncoder[Foo].encode(Foo(3, "abc", List(3, 4, 5))))
+// res4: ValidatedNel[DecodeError, Foo] = Valid(
+//   a = Foo(x = 3, y = "abc", z = List(3, 4, 5))
+// )
+```
+
+---
+
+## Meaningfulness
+
+```scala
+def fromPlainTextToken[T: BSDecoder](token: String): ValidatedNel[DecodeError, T] = {
+  Either
+    .catchNonFatal {
+      val inflater = new Inflater()
+      val bytes = Base64.getDecoder().decode(token)
+      inflater.setInput(bytes, 0, bytes.size)
+      val result = Array.fill[Byte](1024)(0)
+      val inflated = inflater.inflate(result)
+      result.take(inflated).map(_.toChar).mkString("")
+    }
+    .leftMap { _ =>
+      DecodeError.invalid("not deflated or not base64 encoded")
+    }
+    .toValidatedNel
+    .andThen { s => {
+      println(s)
+      BSDecoder[T].decode(s)
+    }
+   }
+}
+
+fromPlainTextToken[Foo](toPlainTextToken(Foo(3, "abc", List(3, 4, 5))))
+// x=3;y="abc";z=[3,4,5]
+// res5: ValidatedNel[DecodeError, Foo] = Valid(
+//   a = Foo(x = 3, y = "abc", z = List(3, 4, 5))
+// )
+```
+
+---
+
+# Checklist
+
+- meaningfulness ✅
+- validity
+- safe from prying eyes
+- extensible
 
 ---
 
@@ -217,6 +262,98 @@ toPlainTextToken(Foo(3, "abc", List(3, 4, 5)))
 - how do we know that the claims in a token are trustworthy?
 - put differently, how do we know a client with a token isn't just making things up?
 
+--
+
+- _signatures_
+
+---
+
+## Validity
+
+- a message from *us* to *future us* about the contents of the token
+- we want to be able to verify the signature, but we don't care if anyone else can verify it
+- *us* and *future us* are equally trustworthy, so we can use a shared key algorithm
+
+---
+
+## Validity
+
+- what should we sign? _whole token contents_
+
+```scala
+// it should go without saying that you should absolutely not have this hardcoded in your
+// codebase in real life, but I'm including this in screaming case in case some copy-pasta
+// happens in your or future-me's work anyway --
+// READ THIS FROM A GITIGNORED FILE OR CONFIG
+val superSecretSigningString = "very secret string key"
+val keyBytes = superSecretSigningString.getBytes(StandardCharsets.UTF_8)
+val alg = "HmacSHA256"
+val secret = new SecretKeySpec(keyBytes, alg)
+
+def sign(s: String): String = {
+  val mac = Mac.getInstance(alg)
+  mac.init(secret)
+  val hashed = mac.doFinal(s.getBytes(StandardCharsets.UTF_8))
+  Base64.getEncoder().encodeToString(hashed)
+}
+```
+
+---
+
+## Validity
+
+```scala
+def createSignedToken[T: BSEncoder](payload: T): String = {
+  val mac = Mac.getInstance(alg)
+  mac.init(secret)
+  val stringPayload = toPlainTextToken(payload)
+  s"$stringPayload.${sign(stringPayload)}"
+}
+
+def verifySignedToken[T: BSDecoder](token: String, signature: String): ValidatedNel[DecodeError, T] = {
+  if (signature != sign(token)) {
+    Validated.invalidNel(DecodeError.badSignature)
+  } else {
+    fromPlainTextToken[T](token)
+  }
+}
+```
+
+---
+
+## Validity
+
+```scala
+val signed = createSignedToken(Foo(3, "omg", List(19, 23, 37)))
+// signed: String = "eJyrsDW2rrRVys9NV7Kuso02tNQxMtYxNo8FAFhXBpw=.V0qGDpFPmdxI99/D+Q070yHTLXzP2XtJm+0RD/V12p8="
+val Array(token, signature) = signed.split("\\.")
+// token: String = "eJyrsDW2rrRVys9NV7Kuso02tNQxMtYxNo8FAFhXBpw="
+// signature: String = "V0qGDpFPmdxI99/D+Q070yHTLXzP2XtJm+0RD/V12p8="
+
+verifySignedToken[Foo](token, signature)
+// x=3;y="omg";z=[19,23,37]
+// res6: ValidatedNel[DecodeError, Foo] = Valid(
+//   a = Foo(x = 3, y = "omg", z = List(19, 23, 37))
+// )
+
+verifySignedToken[Foo](
+  toPlainTextToken(Foo(3, "oh no", List(19, 23, 37))),
+  signature
+)
+// res7: ValidatedNel[DecodeError, Foo] = Invalid(
+//   e = NonEmptyList(head = repl.MdocSession$App$BadSignature$, tail = List())
+// )
+```
+
+---
+
+# Checklist
+
+- meaningfulness ✅
+- validity ✅
+- safe from prying eyes
+- extensible
+
 ---
 
 # Token security
@@ -228,24 +365,61 @@ toPlainTextToken(Foo(3, "abc", List(3, 4, 5)))
 - how do we prevent sensitive information in a token from falling into the wrong hands?
 - how can we design tokens such that users don't accidentally reveal information they don't intend to?
 
-## words words words
+--
 
-- abcde
-- dsfjkl
+- _encryption_
+
+---
+
+## Token security
+
+- encrypted token is a message from *us* to *a user* about their auth information
+- we _are not equally trustworthy_
+- can't use a shared secret to encrypt
 
 ---
 
-## Something
+## Token security
 
-```scala
-def foo(x: Int): Int = x + 3
-```
+- we can encrypt at different points
+- encode -> encrypt -> sign
+- encode -> sign -> encrypt
+- encrypt -> encode -> sign (i.e. throw away serialization?)
 
-## Hidden code block
-- useful
+--
 
+- both of the first two meet our goal of hiding info from unintended audiences and keeping users from accidentally leaking info
+- for convenience, I'll encrypt last
 
 ---
+
+# Checklist
+
+- meaningfulness ✅
+- validity ✅
+- safe from prying eyes ✅
+- extensible
+
+---
+
+# Extensibility
+
+- narrowly conceived, we got it for free from case class derivation 😎
+- arguably too extensible / not restricted enough since you can put whatever you want in your token,
+  but, the requirement is technically met, so bill the client and crack a beer
+
+---
+
+# Checklist
+
+- meaningfulness ✅
+- validity ✅
+- safe from prying eyes ✅
+- extensible ✅
+
+😎
+
+--- 
 
 class: center, middle
 

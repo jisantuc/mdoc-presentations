@@ -47,6 +47,7 @@ lazy val `byo-web-token` = project
   .settings(
     libraryDependencies ++= Seq(
       "com.chuusai" %% "shapeless" % "2.3.9",
+      "org.typelevel" %% "cats-parse" % "0.3.7",
       "org.typelevel" %% "cats-core" % "2.7.0"
     )
   )

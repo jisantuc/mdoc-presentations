@@ -81,11 +81,10 @@ lFwutwLbDjwqKAJ0B_zrELX2lqomMeYzKINs9zQBNmI
 
 ## What other properties?
 
-- `*waves hands*` _meaningful_? (i.e. "userId=james", not "😎🎉🚩🐻🎯")
-- "provably" valid?
-- safe from prying eyes?
-- extensible? (i.e. if the auth needs of services a and b calling the same
-  auth server differ, service b can add data to the token somehow)
+- `*waves hands*` _meaningful_ (i.e. "userId=james", not "😎🎉🚩🐻🎯")
+- "provably" valid
+- safe from prying eyes
+- extensible (i.e. not so beholden to a rigid spec that we can't include information we care about)
 
 ---
 
@@ -94,18 +93,11 @@ lFwutwLbDjwqKAJ0B_zrELX2lqomMeYzKINs9zQBNmI
 - meaningfulness: represent data from authentication / authorization domain in the token
 - validity: it should be possible to prove a token is a good token with (mostly) data contained in the token
 - security: data represented in the token should be legible only to its intended recipients
-- extensible: the data should be open-ended; if I claim something about myself that the auth server doesn't care about,
-  and it's otherwise happy with my request, it should verify my other claims as well
+- extensible: I should be able to add to the data representable in the token at some later time
 
 ---
 
 # BS Web Tokens
-
----
-
-## BS Web Tokens
-
-<!-- - BS stands for "bad serialization" -->
 
 <img src="./fry-trolling-small.png"/>
 
@@ -122,28 +114,34 @@ lFwutwLbDjwqKAJ0B_zrELX2lqomMeYzKINs9zQBNmI
 ```scala mdoc:silent
 case class Foo(x: Int, y: String, z: List[Int])
 Foo(3, "abc", List(3, 4, 5))
-// => x=3;y="abc";z=[3,4,5]
+// => goal is: x=3;y="abc";z=[3,4,5]
 ```
 
 - then GZip it to make it small
-- parsing: don't worry about order, just all the fields have to be there
+- then base64 encode it to make it look nice and token-y
 
 ---
 
 ## Meaningfulness
 ```scala mdoc:invisible
-import cats.data.ValidatedNel
+import cats.data.{NonEmptyList, Validated, ValidatedNel}
+import cats.parse.{Numbers, Parser}
+import cats.parse.Rfc5234._
 import cats.Show
+import cats.syntax.all._
 import shapeless.{HList, HNil, LabelledGeneric, Lazy, Witness, :: }
+import shapeless.labelled
 import shapeless.labelled.FieldType
+import shapeless.syntax.singleton._
+
+import java.nio.charset.StandardCharsets
+import java.util.Base64
+import java.util.zip.{Deflater, Inflater}
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 ```
 
 ```scala mdoc:silent
-sealed abstract class DecodeError extends Throwable
-case class MissingField(fieldName: String) extends DecodeError
-case class IncompatibleFieldType(fieldName: String, unparseableValue: String) extends DecodeError
-case class IncorrectSyntax(parsingError: String) extends DecodeError
-
 trait BSEncoder[A] {
   def encode(a: A): String
 }
@@ -151,7 +149,7 @@ trait BSEncoder[A] {
 
 ---
 
-## Meaningfulness
+## Meaningfulness + Extensibility
 
 ```scala
 object BSEncoder {
@@ -180,10 +178,9 @@ object BSEncoder {
 - and for convenience, we'll make it derivable for case classes (not shown)
 
 ```scala mdoc:invisible
-implicit val encString: BSEncoder[String] = { (a: String) => "\"$a\"" }
+implicit val encString: BSEncoder[String] = { (a: String) => s""""$a"""" }
 implicit def forList[A: BSEncoder]: BSEncoder[List[A]] = (a: List[A]) =>
-  a.map(BSEncoder[A].encode(_)).mkString("[", ";", "]")
-
+  a.map(BSEncoder[A].encode(_)).mkString("[", ",", "]")
 
 implicit val hnilEncoder: BSEncoder[HNil] = { _ => "" }
 
@@ -226,13 +223,10 @@ BSEncoder[Foo].encode(Foo(3, "abc", List(3, 4, 5)))
 - so for token format we can just GZip it and we're good to go
 
 ```scala mdoc
-import java.util.zip.Deflater
-import java.util.Base64
-
 def toPlainTextToken[T: BSEncoder](value: T): String = {
   val deflater = new Deflater()
   val token = BSEncoder[T].encode(value)
-  val tokenBytes = token.getBytes
+  val tokenBytes = token.getBytes(StandardCharsets.UTF_8)
   deflater.setInput(tokenBytes)
   deflater.finish
   val outArray = new Array[Byte](tokenBytes.size * 2)
@@ -245,6 +239,192 @@ toPlainTextToken(Foo(3, "abc", List(3, 4, 5)))
 
 ---
 
+## Meaningfulness
+
+- we've _almost_ done it
+- also have to be able to decode
+- going to wave hands and say "trust me it's real / works" for decoding, which it turns out is *way harder* than encoding
+
+```scala mdoc:invisible
+sealed abstract class DecodeError extends Throwable
+case class Invalid(genericMessage: String) extends DecodeError {
+  override def toString(): String = genericMessage
+}
+case object BadSignature extends DecodeError
+
+object DecodeError {
+  def invalid(s: String): DecodeError = Invalid(s)
+  def badSignature: DecodeError = BadSignature
+}
+
+trait Parseable[T] {
+  def parser: Parser[T]
+}
+
+object Parseable {
+  def apply[T](implicit ev: Parseable[T]): Parseable[T] = ev
+  def instance[T](p: Parser[T]): Parseable[T] = new Parseable[T] {
+    def parser = p
+  }
+
+  implicit def parseableInt: Parseable[Int] = instance {
+    digit.rep.string.map(_.toInt)
+  }
+  implicit def parseableString: Parseable[String] = instance {
+    alpha.rep.string.between(Parser.char('"'), Parser.char('"'))
+  }
+  implicit def parseableBool: Parseable[Boolean] = instance {
+    Parser.fromStringMap(Map("true" -> true, "false" -> false))
+  }
+
+  implicit def parseableList[T: Parseable]: Parseable[List[T]] = instance {
+    Parseable[T].parser
+      .repSep(Parser.char(','))
+      .between(Parser.char('['), Parser.char(']'))
+      .map(_.toList)
+  }
+
+  implicit def parseablePair[T: Parseable]: Parseable[(String, T)] = instance {
+    for {
+      fieldName <- (alpha | digit).rep.string
+      _ <- Parser.char('=')
+      value <- Parseable[T].parser
+    } yield (fieldName, value)
+  }
+}
+
+trait BSDecoder[T] {
+  // works on foo=bar;baz=qux pairs
+  def decode(s: String): ValidatedNel[DecodeError, T]
+}
+
+object BSDecoder {
+  def apply[T](implicit ev: BSDecoder[T]) = ev
+
+  def instance[T](f: String => ValidatedNel[DecodeError, T]): BSDecoder[T] =
+    new BSDecoder[T] { def decode(s: String) = f(s) }
+
+  def forParseable[T: Parseable]: BSDecoder[T] = instance { (s: String) =>
+    Parseable[T].parser
+      .parseAll(s)
+      .leftMap(_ => DecodeError.invalid("oh no"))
+      .toValidatedNel
+  }
+
+  implicit def decodePair[T: BSDecoder]: BSDecoder[(String, T)] =
+    instance { (s: String) =>
+      val Array(fieldName, rest) = s.split("=", 2).padTo(2, "")
+      BSDecoder[T].decode(rest).map((fieldName, _))
+    }
+
+  implicit def intDecoder: BSDecoder[Int] = forParseable[Int]
+
+  implicit def boolDecoder: BSDecoder[Boolean] = forParseable[Boolean]
+
+  implicit def stringDecoder: BSDecoder[String] = forParseable[String]
+
+  implicit def listDecoder[T: Parseable] = forParseable[List[T]]
+
+  implicit def hnilDecoder: BSDecoder[HNil] = {
+    case "" => Validated.valid(HNil)
+    case s =>
+      Validated.invalidNel(DecodeError.invalid(s"had remaining input: $s"))
+  }
+
+  implicit def recordDecoder[K <: Symbol, H, T <: HList](implicit
+      witness: Witness.Aux[K],
+      parseable: Parseable[(String, H)],
+      tDecoder: BSDecoder[T]
+  ): BSDecoder[FieldType[K, H] :: T] = { (s: String) =>
+    val Array(h, t) = s.split(";", 2).padTo(2, "")
+    BSDecoder[T]
+      .decode(t)
+      .andThen({ parsedTail =>
+        val parseResult = parseable.parser.parse(h)
+        (parseResult, t) match {
+          case (Left(_), _) =>
+            Validated.invalidNel(DecodeError.invalid("failed to parse"))
+          case (Right(("", result)), t) =>
+            if (result._1 != witness.value.name) {
+              Validated.invalidNel(DecodeError.invalid("names don't match"))
+            } else {
+              Validated.valid(
+                (witness.value ->> result._2)
+                  .asInstanceOf[H with labelled.KeyTag[K, H]] :: parsedTail
+              )
+            }
+          case (Right((remaining, result)), t) =>
+            if (result._1 != witness.value.name) {
+              Validated.invalidNel(
+                DecodeError.invalid(
+                  s"names don't match, also had extra input: $remaining"
+                )
+              )
+            } else {
+              Validated.valid(
+                (witness.value ->> result._2)
+                  .asInstanceOf[H with labelled.KeyTag[K, H]] :: parsedTail
+              )
+            }
+        }
+      })
+  }
+
+  implicit def labeledGenericDecoder[A, R](implicit
+      gen: LabelledGeneric.Aux[A, R],
+      decoder: BSDecoder[R]
+  ): BSDecoder[A] = { s =>
+    decoder.decode(s).map(gen.from(_))
+  }
+}
+```
+
+```scala mdoc
+BSEncoder[Foo].encode(Foo(3, "abc", List(3, 4, 5)))
+
+BSDecoder[Foo].decode(BSEncoder[Foo].encode(Foo(3, "abc", List(3, 4, 5))))
+```
+
+---
+
+## Meaningfulness
+
+```scala mdoc
+def fromPlainTextToken[T: BSDecoder](token: String): ValidatedNel[DecodeError, T] = {
+  Either
+    .catchNonFatal {
+      val inflater = new Inflater()
+      val bytes = Base64.getDecoder().decode(token)
+      inflater.setInput(bytes, 0, bytes.size)
+      val result = Array.fill[Byte](1024)(0)
+      val inflated = inflater.inflate(result)
+      result.take(inflated).map(_.toChar).mkString("")
+    }
+    .leftMap { _ =>
+      DecodeError.invalid("not deflated or not base64 encoded")
+    }
+    .toValidatedNel
+    .andThen { s => {
+      println(s)
+      BSDecoder[T].decode(s)
+    }
+   }
+}
+
+fromPlainTextToken[Foo](toPlainTextToken(Foo(3, "abc", List(3, 4, 5))))
+```
+
+---
+
+# Checklist
+
+- meaningfulness ✅
+- validity
+- safe from prying eyes
+- extensible
+
+---
+
 # Validity
 
 ---
@@ -253,6 +433,88 @@ toPlainTextToken(Foo(3, "abc", List(3, 4, 5)))
 
 - how do we know that the claims in a token are trustworthy?
 - put differently, how do we know a client with a token isn't just making things up?
+
+--
+
+- _signatures_
+
+---
+
+## Validity
+
+- a message from *us* to *future us* about the contents of the token
+- we want to be able to verify the signature, but we don't care if anyone else can verify it
+- *us* and *future us* are equally trustworthy, so we can use a shared key algorithm
+
+---
+
+## Validity
+
+- what should we sign? _whole token contents_
+
+```scala mdoc:silent
+// it should go without saying that you should absolutely not have this hardcoded in your
+// codebase in real life, but I'm including this in screaming case in case some copy-pasta
+// happens in your or future-me's work anyway --
+// READ THIS FROM A GITIGNORED FILE OR CONFIG
+val superSecretSigningString = "very secret string key"
+val keyBytes = superSecretSigningString.getBytes(StandardCharsets.UTF_8)
+val alg = "HmacSHA256"
+val secret = new SecretKeySpec(keyBytes, alg)
+
+def sign(s: String): String = {
+  val mac = Mac.getInstance(alg)
+  mac.init(secret)
+  val hashed = mac.doFinal(s.getBytes(StandardCharsets.UTF_8))
+  Base64.getEncoder().encodeToString(hashed)
+}
+```
+
+---
+
+## Validity
+
+```scala mdoc
+def createSignedToken[T: BSEncoder](payload: T): String = {
+  val mac = Mac.getInstance(alg)
+  mac.init(secret)
+  val stringPayload = toPlainTextToken(payload)
+  s"$stringPayload.${sign(stringPayload)}"
+}
+
+def verifySignedToken[T: BSDecoder](token: String, signature: String): ValidatedNel[DecodeError, T] = {
+  if (signature != sign(token)) {
+    Validated.invalidNel(DecodeError.badSignature)
+  } else {
+    fromPlainTextToken[T](token)
+  }
+}
+```
+
+---
+
+## Validity
+
+```scala mdoc
+val signed = createSignedToken(Foo(3, "omg", List(19, 23, 37)))
+val Array(token, signature) = signed.split("\\.")
+
+verifySignedToken[Foo](token, signature)
+
+verifySignedToken[Foo](
+  toPlainTextToken(Foo(3, "oh no", List(19, 23, 37))),
+  signature
+)
+```
+
+---
+
+# Checklist
+
+- meaningfulness ✅
+- validity ✅
+- safe from prying eyes
+- extensible
 
 ---
 
@@ -265,27 +527,61 @@ toPlainTextToken(Foo(3, "abc", List(3, 4, 5)))
 - how do we prevent sensitive information in a token from falling into the wrong hands?
 - how can we design tokens such that users don't accidentally reveal information they don't intend to?
 
-## words words words
+--
 
-- abcde
-- dsfjkl
+- _encryption_
+
+---
+
+## Token security
+
+- encrypted token is a message from *us* to *a user* about their auth information
+- we _are not equally trustworthy_
+- can't use a shared secret to encrypt
 
 ---
 
-## Something
+## Token security
 
-```scala mdoc
-def foo(x: Int): Int = x + 3
-```
+- we can encrypt at different points
+- encode -> encrypt -> sign
+- encode -> sign -> encrypt
+- encrypt -> encode -> sign (i.e. throw away serialization?)
 
-## Hidden code block
-- useful
+--
 
-```scala mdoc:invisible
-import scala.collection.mutable.Map
-```
+- both of the first two meet our goal of hiding info from unintended audiences and keeping users from accidentally leaking info
+- for convenience, I'll encrypt last
 
 ---
+
+# Checklist
+
+- meaningfulness ✅
+- validity ✅
+- safe from prying eyes ✅
+- extensible
+
+---
+
+# Extensibility
+
+- narrowly conceived, we got it for free from case class derivation 😎
+- arguably too extensible / not restricted enough since you can put whatever you want in your token,
+  but, the requirement is technically met, so bill the client and crack a beer
+
+---
+
+# Checklist
+
+- meaningfulness ✅
+- validity ✅
+- safe from prying eyes ✅
+- extensible ✅
+
+😎
+
+--- 
 
 class: center, middle
 
