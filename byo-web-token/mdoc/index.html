@@ -124,8 +124,8 @@ Foo(3, "abc", List(3, 4, 5))
 
 ## Meaningfulness
 ```scala mdoc:invisible
-import cats.data.{NonEmptyList, Validated, ValidatedNel}
-import cats.parse.{Numbers, Parser}
+import cats.data.{Validated, ValidatedNel}
+import cats.parse.Parser
 import cats.parse.Rfc5234._
 import cats.Show
 import cats.syntax.all._
@@ -341,10 +341,10 @@ object BSDecoder {
       .decode(t)
       .andThen({ parsedTail =>
         val parseResult = parseable.parser.parse(h)
-        (parseResult, t) match {
-          case (Left(_), _) =>
+        parseResult match {
+          case Left(_) =>
             Validated.invalidNel(DecodeError.invalid("failed to parse"))
-          case (Right(("", result)), t) =>
+          case Right(("", result)) =>
             if (result._1 != witness.value.name) {
               Validated.invalidNel(DecodeError.invalid("names don't match"))
             } else {
@@ -353,7 +353,7 @@ object BSDecoder {
                   .asInstanceOf[H with labelled.KeyTag[K, H]] :: parsedTail
               )
             }
-          case (Right((remaining, result)), t) =>
+          case Right((remaining, result)) =>
             if (result._1 != witness.value.name) {
               Validated.invalidNel(
                 DecodeError.invalid(

@@ -1,3 +1,12 @@
+addCommandAlias(
+  "validate",
+  List(
+    "scalafmtCheckAll",
+    "byo-web-token/mdoc",
+    "decline-for-ciris/mdoc"
+  ).mkString(";")
+)
+
 lazy val baseSettings: Seq[Setting[_]] = Seq(
   scalaVersion := "2.13.8",
   scalacOptions ++= Seq(
