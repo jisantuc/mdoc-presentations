@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Build Your Own Web Token</title>
+  <meta charset="utf-8">
+  <style>
+    @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+    @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+    @import url(https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic);
+
+    body {
+      font-family: 'Droid Serif', 'Helvetica';
+      /*line-height: 1.25em;*/
+    }
+
+    li {
+      margin: 10px 0;
+    }
+
+    h1,
+    h2,
+    h3 {
+      font-family: 'Yanone Kaffeesatz', 'Gill Sans';
+      font-weight: normal;
+    }
+
+    img {
+      width: 75%;
+      height: 75%;
+      object-fit: contain;
+    }
+
+    .pokemon {
+      width: 50%;
+      height: 50%;
+    }
+
+    .remark-code,
+    .remark-inline-code {
+      font-family: 'Ubuntu Mono', 'Consolas', 'Courier New';
+    }
+  </style>
+</head>
+
+<body>
+  <textarea id="source">
+
+class: center, middle
+
+# Build Your Own Web Token
+James Santucci • `@jisantuc`
+
+@47Degrees / @jisantuc
+
+Questions at the end
+
+---
+
+class: center, middle
+
+# Tokens
+
+---
+
+## Why create our own web token?
+
+- JWT has ~ a billion features, building our own simpler one lets us explore expected features ~~more lazily~~ with a discerning eye on what's essential
+- using JWTs veers off into Java crypto APIs unless the people producing the JWT agree with the exact opinions of your library,
+  so we may as well get used to it
+- so much token stuff around the internet is in JavaScript and it's good to do token-y work sometimes with ~~better~~ different tools
+
+<!-- also Rafa said we need to know more about tokens as an org -->
+
+---
+
+## Some properties of "web tokens"
+
+- web: should be URL safe, not be so huge that you care about it for bandwidth
+- token: should be some kind of magic random string looking thing, not meaningful on its own
+
+--
+
+## Some tokens
+
+- secret
+- All happy families are alike, but every unhappy family is unhappy in its own way
+- 😎🎉🚩🐻🎯
+- more familiar tokens like:
+```
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+eyJzdWIiOiJhYmprbHNqZGZsa2EiLCJuYW1lIjoiSmFtZXMgUyIsImlhdCI6MTUxNjIzOTAyMn0.
+lFwutwLbDjwqKAJ0B_zrELX2lqomMeYzKINs9zQBNmI
+```
+
+---
+
+## What other properties would be nice?
+
+- `*waves hands*` _meaningful_ (i.e. "userId=james", not "😎🎉🚩🐻🎯")
+- verifiable validity
+- safe from prying eyes
+- extensible (i.e. not so beholden to a rigid spec that we can't include information we care about)
+
+---
+
+## Pursuing token properties
+
+- meaningfulness: represent data from authentication / authorization domain in the token
+- validity: it should be possible to prove a token is a good token with (mostly) data contained in the token
+- security: data represented in the token should be legible only to its intended recipients
+- extensible: I should be able to add to the data representable in the token at some later time
+
+---
+
+# Checklist
+
+- meaningfulness
+- validity
+- safe from prying eyes
+- extensible
+
+<img src="./bulbapedia-charmander.png" class="pokemon"/>
+
+---
+
+# BS Web Tokens
+
+<img src="./fry-trolling-small.png"/>
+
+---
+
+## Meaningfulness
+
+---
+
+### Meaningfulness
+
+- going to build a serialization format from scratch that's very simple
+
+```scala
+case class Foo(x: Int, y: String, z: List[Int])
+Foo(3, "abc", List(3, 4, 5))
+// => goal is: x=3;y="abc";z=[3,4,5]
+```
+
+- then GZip it to make it small
+- then base64 encode it to make it look nice and token-y
+
+---
+
+### Meaningfulness
+
+```scala
+trait BSEncoder[A] {
+  def encode(a: A): String
+}
+```
+
+---
+
+### Meaningfulness
+
+```scala
+object BSEncoder {
+  def apply[A](implicit ev: BSEncoder[A]): BSEncoder[A] = ev
+}
+implicit val encBool: BSEncoder[Boolean] = { (a: Boolean) => s"$a" }
+implicit val encInt: BSEncoder[Int] = { (a: Int) => s"$a" } // 🤔
+// others
+```
+
+- repetitive! 
+
+```scala
+object BSEncoder {
+  def apply[A](implicit ev: BSEncoder[A]): BSEncoder[A] = ev
+  def forShow[A: Show]: BSEncoder[A] = new BSEncoder[A] { def encode(a: A) = Show[A].show(a) }
+  def forTuple[A: BSEncoder]: BSEncoder[(String, A)] = { case (s, a) =>
+    s"$s=${BSEncoder[A].encode(a)}"
+  }
+  implicit val encInt: BSEncoder[Int] = forShow[Int]
+  implicit val encBool: BSEncoder[Boolean] = forShow[Boolean]
+  // others...
+}
+```
+
+- and for convenience, we'll make it derivable for case classes (not shown)
+
+
+```scala
+BSEncoder[Foo].encode(Foo(3, "abc", List(3, 4, 5)))
+// res1: String = "x=3;y=\"abc\";z=[3,4,5]"
+```
+
+---
+
+### Meaningfulness
+
+- _we've done it_
+- we can take arbitrary domain information in case classes and represent it in our token in a super advanced serialization format
+- so for token format we can just GZip it and we're good to go
+
+```scala
+def toPlainTextToken[T: BSEncoder](value: T): String = {
+  val deflater = new Deflater()
+  val token = BSEncoder[T].encode(value)
+  val tokenBytes = token.getBytes(StandardCharsets.UTF_8)
+  deflater.setInput(tokenBytes)
+  deflater.finish
+  val outArray = new Array[Byte](tokenBytes.size * 2)
+  val count: Int = deflater.deflate(outArray)
+  Base64.getEncoder().encodeToString(outArray.take(count))
+}
+
+toPlainTextToken(Foo(3, "abc", List(3, 4, 5)))
+// res2: String = "eJyrsDW2rrRVSkxKVrKuso021jHRMY0FAEP/BeI="
+```
+
+---
+
+### Meaningfulness
+
+- we've _almost_ done it
+- also have to be able to decode
+- going to wave hands and say "trust me it's real / works" for decoding, which it turns out is *way harder* than encoding
+
+
+```scala
+BSEncoder[Foo].encode(Foo(3, "abc", List(3, 4, 5)))
+// res3: String = "x=3;y=\"abc\";z=[3,4,5]"
+
+BSDecoder[Foo].decode(BSEncoder[Foo].encode(Foo(3, "abc", List(3, 4, 5))))
+// res4: ValidatedNel[DecodeError, Foo] = Valid(
+//   a = Foo(x = 3, y = "abc", z = List(3, 4, 5))
+// )
+```
+
+---
+
+## Meaningfulness
+
+```scala
+def fromPlainTextToken[T: BSDecoder](token: String): ValidatedNel[DecodeError, T] = {
+  Either
+    .catchNonFatal {
+      val inflater = new Inflater()
+      val bytes = Base64.getDecoder().decode(token)
+      inflater.setInput(bytes, 0, bytes.size)
+      val result = Array.fill[Byte](1024)(0)
+      val inflated = inflater.inflate(result)
+      result.take(inflated).map(_.toChar).mkString("")
+    }
+    .leftMap { _ =>
+      DecodeError.invalid("not deflated or not base64 encoded")
+    }
+    .toValidatedNel
+    .andThen { s => {
+      println(s)
+      BSDecoder[T].decode(s)
+    }
+   }
+}
+
+fromPlainTextToken[Foo](toPlainTextToken(Foo(3, "abc", List(3, 4, 5))))
+// x=3;y="abc";z=[3,4,5]
+// res5: ValidatedNel[DecodeError, Foo] = Valid(
+//   a = Foo(x = 3, y = "abc", z = List(3, 4, 5))
+// )
+```
+
+---
+
+# Checklist
+
+- meaningfulness ✅
+- validity
+- safe from prying eyes
+- extensible
+
+<img src="./bulbapedia-charmeleon.png" class="pokemon"/>
+
+---
+
+class: center, middle
+
+# Validity
+
+---
+
+## Validity
+
+- how do we know that the claims in a token are trustworthy?
+- put differently, how do we know a client with a token isn't just making things up?
+
+--
+
+- _signatures_
+
+---
+
+## Validity
+
+- a message from *us* to *future us* about the contents of the token
+- we want to be able to verify the signature, but we don't care if anyone else can verify it
+- *us* and *future us* are equally trustworthy, so we can use a shared key algorithm
+
+<!-- i.e. -- shared key means that anyone who is capable of signing is also capable of verifying
+signatures and vice versa; that's bad if a user has the key, since they could then sign
+arbitrary data and we'd have to treat it as good to go. however, it's not a problem to assume
+that future us also has the key, since future us needs to use it to sign tokens
+anyway -->
+
+---
+
+## Validity
+
+- what should we sign? _whole token contents_
+
+```scala
+// it should go without saying that you should absolutely not have this hardcoded in your
+// codebase in real life, but I'm including this in screaming case in case some copy-pasta
+// happens in your or future-me's work anyway --
+// READ THIS FROM A GITIGNORED FILE OR CONFIG
+val superSecretSigningString = "very secret string key"
+val keyBytes = superSecretSigningString.getBytes(StandardCharsets.UTF_8)
+val alg = "HmacSHA256"
+val secret = new SecretKeySpec(keyBytes, alg)
+
+def sign(s: String): String = {
+  val mac = Mac.getInstance(alg)
+  mac.init(secret)
+  val hashed = mac.doFinal(s.getBytes(StandardCharsets.UTF_8))
+  Base64.getEncoder().encodeToString(hashed)
+}
+```
+
+---
+
+## Validity
+
+```scala
+def createSignedToken[T: BSEncoder](payload: T): String = {
+  val mac = Mac.getInstance(alg)
+  mac.init(secret)
+  val stringPayload = toPlainTextToken(payload)
+  s"$stringPayload.${sign(stringPayload)}"
+}
+
+def verifySignedToken[T: BSDecoder](token: String, signature: String): ValidatedNel[DecodeError, T] = {
+  if (signature != sign(token)) {
+    Validated.invalidNel(DecodeError.badSignature)
+  } else {
+    fromPlainTextToken[T](token)
+  }
+}
+```
+
+---
+
+## Validity
+
+```scala
+val signed = createSignedToken(Foo(3, "omg", List(19, 23, 37)))
+// signed: String = "eJyrsDW2rrRVys9NV7Kuso02tNQxMtYxNo8FAFhXBpw=.V0qGDpFPmdxI99/D+Q070yHTLXzP2XtJm+0RD/V12p8="
+val Array(token, signature) = signed.split("\\.")
+// token: String = "eJyrsDW2rrRVys9NV7Kuso02tNQxMtYxNo8FAFhXBpw="
+// signature: String = "V0qGDpFPmdxI99/D+Q070yHTLXzP2XtJm+0RD/V12p8="
+
+verifySignedToken[Foo](token, signature)
+// x=3;y="omg";z=[19,23,37]
+// res6: ValidatedNel[DecodeError, Foo] = Valid(
+//   a = Foo(x = 3, y = "omg", z = List(19, 23, 37))
+// )
+
+verifySignedToken[Foo](
+  toPlainTextToken(Foo(3, "oh no", List(19, 23, 37))),
+  signature
+)
+// res7: ValidatedNel[DecodeError, Foo] = Invalid(
+//   e = NonEmptyList(head = repl.MdocSession$App$BadSignature$, tail = List())
+// )
+```
+
+---
+
+# Checklist
+
+- meaningfulness ✅
+- validity ✅
+- safe from prying eyes
+- extensible
+
+<img src="./bulbapedia-charizard.png" class="pokemon" />
+
+---
+
+class: center, middle
+
+# Token security
+
+---
+
+## Token security
+
+- how do we prevent sensitive information in a token from falling into the wrong hands?
+- or, how can we design tokens such that users don't accidentally reveal information they don't intend to?
+
+--
+
+- _encryption_
+
+---
+
+## Token security
+
+- encrypted token is a message from _us_ to _someone who needs to be able to decrypt the message_ about the client's auth info
+- if we're the only expected consumer of the information, then we're both producer and consumer, and it's fine to use a shared
+  secret for encryption as well
+- if someone else is required to consume the information, then we need to encrypt with _their_ public key
+- in this case we'll pretend we're encrypting for some third party, but we'll happen to know the public and private keys
+
+---
+
+## Token security
+
+- we can encrypt at different points and different combinations of things --
+- things to encrypt: payload only, signature only, both individually, entire combined token string
+- for convenience with other methods I'll encrypt the whole token string here
+- also for convenience / variety I'll do asymmetric encryption here, though whether it's necessary
+  or helpful depends on the architecture
+
+---
+
+## Token security
+
+- some keys:
+
+```scala
+def makeKeys(size: Int = 2048): (PublicKey, PrivateKey) = {
+  val generator = KeyPairGenerator.getInstance("RSA")
+  generator.initialize(size)
+  val keyPair = generator.generateKeyPair()
+  val publicKey = keyPair.getPublic()
+  val privateKey = keyPair.getPrivate()
+  (publicKey, privateKey)
+}
+
+val (publicKey, privateKey) = makeKeys()
+// publicKey: PublicKey = Sun RSA public key, 2048 bits
+//   params: null
+//   modulus: 26520052466093850716003134530678992775238125868863793061737251975494928859646275537525092524055037115322281745852379812192798524538809138118952001793472852749360102448808583363240342665232865456503267735128249393144615926582814806954318159614429373016554097159526591636426551972778736722889514221473713057253036297251272854980441687410870400077715519393477516229632768168657731215300369853385248017673780061201065450107027455769256083651088436907857925192735555554945408070373514582008020091078991999819389184045474747366183716603280776907212114002936571769134088190293042836901899596452614726360935364578749890487351
+//   public exponent: 65537
+// privateKey: PrivateKey = SunRsaSign RSA private CRT key, 2048 bits
+//   params: null
+//   modulus: 26520052466093850716003134530678992775238125868863793061737251975494928859646275537525092524055037115322281745852379812192798524538809138118952001793472852749360102448808583363240342665232865456503267735128249393144615926582814806954318159614429373016554097159526591636426551972778736722889514221473713057253036297251272854980441687410870400077715519393477516229632768168657731215300369853385248017673780061201065450107027455769256083651088436907857925192735555554945408070373514582008020091078991999819389184045474747366183716603280776907212114002936571769134088190293042836901899596452614726360935364578749890487351
+//   private exponent: 14097870025577058228097612095676113177236081406615281237741491395307503037081596555408955222935951265097776427724049930222392050237386080579308921532612123181332020220852987408516262540458791211668482607139983224861761665413715688229267289665488272678391262812468482323290120758955069787886961349496050920878697278525458563901153381046252084929775762935127987494580264042370328562011099134535038031410225606364875330121034742289236469535993139248336019067728483569792405371899948620975022205330298123583292468829756477981555090056594022427007740130044407610540034609644968451948761310467559345334708859381943422539457
+```
+
+---
+
+## Token security
+
+- encryption:
+
+<!-- here this occurs the same place that we're creating the signed token, however it's conceivable
+that some service could be responsible for creating and validating signed tokens, and another service
+entirely could be responsible for handing encrypted tokens out to consumers; i.e., there's no reason
+that our encrypter has to know that the thing it's encrypting started out as a T: BSEncoder -- it could
+just blindly encrypt any input it gets -->
+
+```scala
+def createEncryptedToken[T: BSEncoder](payload: T): String = {
+  val cipher = Cipher.getInstance("RSA")
+  cipher.init(Cipher.ENCRYPT_MODE, publicKey)  
+  val plainTextToken = createSignedToken(payload)
+  val encryptedTokenBytes =
+    cipher.doFinal(plainTextToken.getBytes(StandardCharsets.UTF_8))
+  Base64.getEncoder().encodeToString(encryptedTokenBytes)
+}
+```
+
+---
+
+## Token security
+
+- decryption:
+
+<!-- in this specific implementation the signature check depends on being able to decrypt
+so we're definitely in the "message from us to future us" scenario; however, there's no reason that
+the signature validity check has to occur in the same application as the decryption e.g. if several
+different services are creating signed tokens and encrypting them to this server's public key. there's
+no reason in that case for our decrypter to know anything about what kind of token to expect, it only
+needs to know how to decrypt the incoming data. -->
+
+```scala
+def decryptToken[T: BSDecoder](token: String): ValidatedNel[DecodeError, T] = {
+  val cipher = Cipher.getInstance("RSA")
+  cipher.init(Cipher.DECRYPT_MODE, privateKey)
+  Either.catchNonFatal(
+    cipher.doFinal(Base64.getDecoder().decode(token))
+  )
+  .leftMap(_ => DecodeError.badEncryption)
+  .toValidatedNel
+  .andThen { tokenBytes =>
+    val tokenString = tokenBytes.map(_.toChar).mkString("")
+    val Array(payload, signature) = tokenString.split("\\.").padTo(2, "")
+    verifySignedToken[T](payload, signature)
+  }
+}
+```
+
+---
+
+## Token security
+
+- round trip:
+
+```scala
+val payload = Foo(28, "asdf", List(1, 2, 3, 4))
+// payload: Foo = Foo(x = 28, y = "asdf", z = List(1, 2, 3, 4))
+createEncryptedToken(payload)
+// res8: String = "j+4mx74Fh9F6cNHedAMH4XoL1kgx2EHIy63kw5c0DT7fN6riHCn5u75x7YdLWyFXBMnPB1t4hu62uAXvoMunLxcFPg62rtCYuVD4kZYPn/y/IcpSGyU9cbfHFOwzfP+/BdNalVg9hcO0LPdUn7GHeyqBUJaBkUf+vHrvtuqtSxcrGQd6gykWgHqPHzFLhzotY3mrI/0gUZrM8T1pgbeTTwfaWjTN0UHPS4zNjtkfFpEgn0RKzqblRCA1LOgUKjYOHUnAJaiLItGOT6ccXdpys3rsm3ZpdpWDecNcz2wN0GjZUY9n/9jSU+7yEtAuPoVtfqsYIi0BaeUztDM/9l5cAA=="
+decryptToken[Foo](createEncryptedToken(payload))
+// x=28;y="asdf";z=[1,2,3,4]
+// res9: ValidatedNel[DecodeError, Foo] = Valid(
+//   a = Foo(x = 28, y = "asdf", z = List(1, 2, 3, 4))
+// )
+```
+
+- proof that decryption will fail with a token either encrypted by a different
+  signing key or decrypted using a different private key is left to the reader
+
+---
+
+# Checklist
+
+- meaningfulness ✅
+- validity ✅
+- safe from prying eyes ✅
+- extensible
+
+<img src="./bulbapedia-mega-charizard-y.png" class="pokemon" />
+
+---
+
+# Extensibility
+
+- narrowly conceived, we got it for free from case class derivation 😎
+- arguably too extensible / not restricted enough since you can put whatever you want in your token,
+  but, the requirement is technically met, so bill the client and crack a beer
+
+---
+
+# Checklist
+
+- meaningfulness ✅
+- validity ✅
+- safe from prying eyes ✅
+- extensible ✅
+
+<img src="./bulbapedia-gigantamax-charizard.png" class="pokemon" />
+
+---
+
+# So how'd we do?
+
+- slightly bigger token (blame encryption / extra base64 step maybe):
+  - JWT HMACSHA256 signed token of the same data: 126 characters
+  - BSWT Encrypted + HMACSHA256 signed token: 173 characters
+
+--
+
+- way less flexible:
+  - BSWT support: HMACSHA256 only for signing, RSA 1024 bit key only for encryption, key must be present at initialization
+  - JWT support: big list of signing algorithms directed by header, big list of encryption algorithms directed by encryption header, support for multiple keys, support for public keys from URL
+
+--
+
+- more precise expectations:
+  - JWT checks token validity (signature is good, payload is JSON of any variety)
+  - BSWT checks token validity + domain validity (signature is good, payload matches shape required by domain type)
+  - but [tsec](https://jmcardon.github.io/tsec/docs/http4s/auth-jwt.html) also has explicit expectations about types
+
+<!-- similar in Servant if you use servant auth -- there's a typeclass for "I expect to be able to decode this from
+the payload of a JWT" which you can derive for free with ToJSON / FromJSON instances, and it's required on any route
+with JWT auth in its type -->
+
+--
+
+- barely a web token since maybe not url-safe 🤷🏻‍♂️
+
+<!-- depending on input -- some inputs will give us slashes or other unsafe characters in the encoded token;
+this isn't a problem unless you're using the token in a query parameter, but still -->
+
+---
+
+# disclaimers / requests
+
+All Pokemon imagery via Bulbapedia, where the authors believe use of the imagery is covered under fair use.
+I believe the same about the use of the imagery here but I am not a lawyer.
+
+Also cryptography is really hard? If you think your'e really solid on explaining different cryptosystems and
+situations where you may want to prioritize different features, uhhh maybe there should be a mentoring session
+on that (I'd sign up). 
+
+---
+
+class: center, middle
+
+# Thanks!
+Code and slides at `jisantuc/mdoc-presentations` on GitHub
+
+## Questions?
+
+ </textarea>
+  <script src="remark-latest.min.js">
+  </script>
+  <script>
+    var slideshow = remark.create();
+  </script>
+</body>
+
+</html>

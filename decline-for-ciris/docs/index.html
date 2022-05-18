@@ -184,9 +184,9 @@ sealed abstract class ConfigDecoder[A, B] {
 ```scala
 case class User(name: String)
 env("USER")
-// res0: ConfigValue[Effect, String] = ConfigValue$1212331616
+// res0: ConfigValue[Effect, String] = ConfigValue$1330152504
 env("USER").map(User)
-// res1: ConfigValue[Effect, User] = ConfigValue$1802278215
+// res1: ConfigValue[Effect, User] = ConfigValue$313592666
 ```
 
 ---
@@ -281,8 +281,12 @@ import com.monovore.decline._
 // decline version:
 val dbUserOpt = Opts.env[DatabaseUser]("DB_USER", help = "The name of the database user")
 // dbUserOpt: Opts[DatabaseUser] = Validate(
-//   Env("DB_USER", "The name of the database user", "string"),
-//   com.monovore.decline.Opts$$$Lambda$6379/2052609059@63dd7478
+//   value = Env(
+//     name = "DB_USER",
+//     help = "The name of the database user",
+//     metavar = "string"
+//   ),
+//   validate = com.monovore.decline.Opts$$$Lambda$8906/1946404697@40a396ec
 // )
 ```
 
@@ -294,15 +298,17 @@ Asking for more info lets Decline present errors in a nice, CLI-friendly way:
 
 ```scala
 val command = Command(name = "connect-to-db", header = "Connect to the database")(dbUserOpt)
-// command: Command[DatabaseUser] = com.monovore.decline.Command@6c31740d
+// command: Command[DatabaseUser] = com.monovore.decline.Command@1d031779
 
 //                                1.       2.
-val parseError = command.parse(Seq.empty, env = Map.empty).left.get
+val parseError = command.parse(Seq.empty, env = Map.empty)
+  .swap
+  .getOrElse(throw new Exception("oh no"))
 // parseError: Help = Help(
-//   List("Missing expected environment variable (DB_USER)!"),
-//   NonEmptyList("connect-to-db", List()),
-//   List(""),
-//   List(
+//   errors = List("Missing expected environment variable (DB_USER)!"),
+//   prefix = NonEmptyList(head = "connect-to-db", tail = List()),
+//   usage = List(""),
+//   body = List(
 //     "Connect to the database",
 //     """Options and flags:
 //     --help
@@ -329,13 +335,13 @@ val h = "some help text"
 // we can read anything with Argument[A]
 Opts.env[String]("DB_USER", help = h)
 // res2: Opts[String] = Validate(
-//   Env("DB_USER", "some help text", "string"),
-//   com.monovore.decline.Opts$$$Lambda$6379/2052609059@45eaabcb
+//   value = Env(name = "DB_USER", help = "some help text", metavar = "string"),
+//   validate = com.monovore.decline.Opts$$$Lambda$8906/1946404697@ecd5696
 // )
 Opts.env[Int]("DB_PORT", help = h)
 // res3: Opts[Int] = Validate(
-//   Env("DB_PORT", "some help text", "integer"),
-//   com.monovore.decline.Opts$$$Lambda$6379/2052609059@76f28fe2
+//   value = Env(name = "DB_PORT", help = "some help text", metavar = "integer"),
+//   validate = com.monovore.decline.Opts$$$Lambda$8906/1946404697@763bb1
 // )
 ```
 
@@ -348,8 +354,12 @@ Opts.env[Int]("DB_PORT", help = h)
 ```scala
 val dashboardOpt = Opts.env[DashboardVersion]("DASHBOARD_VERSION", help = h)
 // dashboardOpt: Opts[DashboardVersion] = Validate(
-//   Env("DASHBOARD_VERSION", "some help text", "value"),
-//   com.monovore.decline.Opts$$$Lambda$6379/2052609059@b0d2e89
+//   value = Env(
+//     name = "DASHBOARD_VERSION",
+//     help = "some help text",
+//     metavar = "value"
+//   ),
+//   validate = com.monovore.decline.Opts$$$Lambda$8906/1946404697@77de8b51
 // )
 
 // need the type annotation unfortunately otherwise we get Opts[Product with Serializable]
@@ -361,18 +371,26 @@ val cacheOpt: Opts[CacheConfig] = (
   case (_, host)                               => MemcachedConfig(host)
 }
 // cacheOpt: Opts[CacheConfig] = App(
-//   Pure(cats.SemigroupalArityFunctions$$Lambda$6407/486288133@48c6cd9b),
-//   App(
-//     App(
-//       Pure(cats.Apply$$Lambda$6405/860248630@586293bb),
-//       Validate(
-//         Env("CACHE_BACKEND", "some help text", "string"),
-//         com.monovore.decline.Opts$$$Lambda$6379/2052609059@3a8d9aca
+//   f = Pure(a = cats.SemigroupalArityFunctions$$Lambda$8933/759810733@230558b),
+//   a = App(
+//     f = App(
+//       f = Pure(a = cats.Apply$$Lambda$8931/1051626347@662ddabd),
+//       a = Validate(
+//         value = Env(
+//           name = "CACHE_BACKEND",
+//           help = "some help text",
+//           metavar = "string"
+//         ),
+//         validate = com.monovore.decline.Opts$$$Lambda$8906/1946404697@5737de7a
 //       )
 //     ),
-//     Validate(
-//       Env("CACHE_HOST", "some help text", "string"),
-//       com.monovore.decline.Opts$$$Lambda$6379/2052609059@58969274
+//     a = Validate(
+//       value = Env(
+//         name = "CACHE_HOST",
+//         help = "some help text",
+//         metavar = "string"
+//       ),
+//       validate = com.monovore.decline.Opts$$$Lambda$8906/1946404697@54b053ce
 //     )
 //   )
 // )
@@ -502,7 +520,7 @@ val appCmd: Command[ProgramMode] =
 
 ```scala
 def main(args: Array[String]): Unit =
-  appCmd.parse(args) match {
+  appCmd.parse(args.toIndexedSeq) match {
     case Right(RunMigrations(_)) => ???
     case Right(RunServer(_, _)) => ???
     case _ => throw new Exception("oh no")
@@ -521,7 +539,7 @@ val appMainCmd = appCmd map {
   case RunMigrations(_) => println("migrations")
   case RunServer(_, _) => println("run server")
 }
-// appMainCmd: Command[Unit] = com.monovore.decline.Command@26c236e8
+// appMainCmd: Command[Unit] = com.monovore.decline.Command@542cc8de
 object App extends CommandApp(appMainCmd)
 ```
 
@@ -556,7 +574,8 @@ object AppIO extends CommandIOApp(
 class: center, middle
 
 # Thanks!
-Code and slides at `jisantuc/intro-cats-effect` on GitHub
+
+Code and slides at `jisantuc/mdoc-presentations` on GitHub
 
 ## Questions?
 

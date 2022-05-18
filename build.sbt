@@ -1,5 +1,14 @@
+addCommandAlias(
+  "validate",
+  List(
+    "scalafmtCheckAll",
+    "byo-web-token/mdoc",
+    "decline-for-ciris/mdoc"
+  ).mkString(";")
+)
+
 lazy val baseSettings: Seq[Setting[_]] = Seq(
-  scalaVersion := "2.12.14",
+  scalaVersion := "2.13.8",
   scalacOptions ++= Seq(
     "-deprecation",
     "-encoding",
@@ -9,22 +18,24 @@ lazy val baseSettings: Seq[Setting[_]] = Seq(
     "-language:implicitConversions",
     "-language:existentials",
     "-unchecked",
-    "-Yno-adapted-args",
     "-Ywarn-numeric-widen",
-    "-Ywarn-value-discard",
-    "-Xfuture"
+    "-Ywarn-value-discard"
   ),
   resolvers += Resolver.sonatypeRepo("releases")
+)
+
+lazy val mdocModule: Seq[Setting[_]] = Seq(
+  mdocIn := baseDirectory.value / "mdoc",
+  mdocOut := baseDirectory.value / "./docs",
+  watchSources ++= (mdocIn.value ** "*.html").get
 )
 
 lazy val `decline-for-ciris` = project
   .in(file("decline-for-ciris"))
   .settings(moduleName := "decline-for-ciris")
   .settings(baseSettings: _*)
+  .settings(mdocModule: _*)
   .settings(
-    mdocIn := baseDirectory.value / "mdoc",
-    mdocOut := baseDirectory.value / "./docs",
-    watchSources ++= (mdocIn.value ** "*.html").get,
     libraryDependencies ++= Seq(
       "com.beachape" %% "enumeratum" % "1.7.0",
       "com.monovore" %% "decline" % "2.2.0",
@@ -32,6 +43,20 @@ lazy val `decline-for-ciris` = project
       "com.monovore" %% "decline-enumeratum" % "2.0.0",
       "is.cir" %% "ciris" % "2.3.2",
       "is.cir" %% "ciris-enumeratum" % "2.3.2",
+      "org.typelevel" %% "cats-core" % "2.7.0"
+    )
+  )
+  .enablePlugins(MdocPlugin)
+
+lazy val `byo-web-token` = project
+  .in(file("byo-web-token"))
+  .settings(moduleName := "byo-web-token")
+  .settings(baseSettings: _*)
+  .settings(mdocModule: _*)
+  .settings(
+    libraryDependencies ++= Seq(
+      "com.chuusai" %% "shapeless" % "2.3.9",
+      "org.typelevel" %% "cats-parse" % "0.3.7",
       "org.typelevel" %% "cats-core" % "2.7.0"
     )
   )
