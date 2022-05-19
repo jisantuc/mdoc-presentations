@@ -184,9 +184,9 @@ sealed abstract class ConfigDecoder[A, B] {
 ```scala
 case class User(name: String)
 env("USER")
-// res0: ConfigValue[Effect, String] = ConfigValue$460650455
+// res0: ConfigValue[Effect, String] = ConfigValue$1600786991
 env("USER").map(User)
-// res1: ConfigValue[Effect, User] = ConfigValue$1474795742
+// res1: ConfigValue[Effect, User] = ConfigValue$733718454
 ```
 
 ---
@@ -286,7 +286,7 @@ val dbUserOpt = Opts.env[DatabaseUser]("DB_USER", help = "The name of the databa
 //     help = "The name of the database user",
 //     metavar = "string"
 //   ),
-//   validate = com.monovore.decline.Opts$$$Lambda$9465/1266826261@77a4baff
+//   validate = com.monovore.decline.Opts$$$Lambda$9418/1901458351@17a8446
 // )
 ```
 
@@ -298,7 +298,7 @@ Asking for more info lets Decline present errors in a nice, CLI-friendly way:
 
 ```scala
 val command = Command(name = "connect-to-db", header = "Connect to the database")(dbUserOpt)
-// command: Command[DatabaseUser] = com.monovore.decline.Command@4fa401c5
+// command: Command[DatabaseUser] = com.monovore.decline.Command@351276c2
 
 //                                1.       2.
 val parseError = command.parse(Seq.empty, env = Map.empty)
@@ -336,12 +336,12 @@ val h = "some help text"
 Opts.env[String]("DB_USER", help = h)
 // res2: Opts[String] = Validate(
 //   value = Env(name = "DB_USER", help = "some help text", metavar = "string"),
-//   validate = com.monovore.decline.Opts$$$Lambda$9465/1266826261@199fd97c
+//   validate = com.monovore.decline.Opts$$$Lambda$9418/1901458351@11200bc8
 // )
 Opts.env[Int]("DB_PORT", help = h)
 // res3: Opts[Int] = Validate(
 //   value = Env(name = "DB_PORT", help = "some help text", metavar = "integer"),
-//   validate = com.monovore.decline.Opts$$$Lambda$9465/1266826261@1f347c0e
+//   validate = com.monovore.decline.Opts$$$Lambda$9418/1901458351@1329bf2c
 // )
 ```
 
@@ -359,7 +359,7 @@ val dashboardOpt = Opts.env[DashboardVersion]("DASHBOARD_VERSION", help = h)
 //     help = "some help text",
 //     metavar = "value"
 //   ),
-//   validate = com.monovore.decline.Opts$$$Lambda$9465/1266826261@30af82c6
+//   validate = com.monovore.decline.Opts$$$Lambda$9418/1901458351@6fae4f4c
 // )
 
 // need the type annotation unfortunately otherwise we get Opts[Product with Serializable]
@@ -371,17 +371,17 @@ val cacheOpt: Opts[CacheConfig] = (
   case (_, host)                               => MemcachedConfig(host)
 }
 // cacheOpt: Opts[CacheConfig] = App(
-//   f = Pure(a = cats.SemigroupalArityFunctions$$Lambda$9492/913842661@3e1a83ed),
+//   f = Pure(a = cats.SemigroupalArityFunctions$$Lambda$9445/914951890@20aaef5e),
 //   a = App(
 //     f = App(
-//       f = Pure(a = cats.Apply$$Lambda$9490/1911469870@59a9f96b),
+//       f = Pure(a = cats.Apply$$Lambda$9443/126569961@31c5cec8),
 //       a = Validate(
 //         value = Env(
 //           name = "CACHE_BACKEND",
 //           help = "some help text",
 //           metavar = "string"
 //         ),
-//         validate = com.monovore.decline.Opts$$$Lambda$9465/1266826261@65c12a5c
+//         validate = com.monovore.decline.Opts$$$Lambda$9418/1901458351@6fcbd703
 //       )
 //     ),
 //     a = Validate(
@@ -390,7 +390,7 @@ val cacheOpt: Opts[CacheConfig] = (
 //         help = "some help text",
 //         metavar = "string"
 //       ),
-//       validate = com.monovore.decline.Opts$$$Lambda$9465/1266826261@29343d90
+//       validate = com.monovore.decline.Opts$$$Lambda$9418/1901458351@72822199
 //     )
 //   )
 // )
@@ -539,7 +539,7 @@ val appMainCmd = appCmd map {
   case RunMigrations(_) => println("migrations")
   case RunServer(_, _) => println("run server")
 }
-// appMainCmd: Command[Unit] = com.monovore.decline.Command@435bc6b0
+// appMainCmd: Command[Unit] = com.monovore.decline.Command@5a5f088
 object App extends CommandApp(appMainCmd)
 ```
 
