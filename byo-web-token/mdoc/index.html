@@ -66,11 +66,14 @@ class: center, middle
 ## Why create our own web token?
 
 - JWT has ~ a billion features, building our own simpler one lets us explore expected features ~~more lazily~~ with a discerning eye on what's essential
+
+<!-- probably you're not going to use all the features! it's unlikely if you're reading up on JWTs you'll immediately jump into
+nested asymmetrically encrypted signed JWTs with every optional header field, so starting with something smaller can give a nice view
+of token mechanics without delving into every "this is mostly true except when..." -->
+
 - using JWTs veers off into Java crypto APIs unless the people producing the JWT agree with the exact opinions of your library,
   so we may as well get used to it
 - so much token stuff around the internet is in JavaScript and it's good to do token-y work sometimes with ~~better~~ different tools
-
-<!-- also Rafa said we need to know more about tokens as an org -->
 
 ---
 
@@ -79,7 +82,10 @@ class: center, middle
 - web: should be URL safe, not be so huge that you care about it for bandwidth
 - token: should be some kind of magic random string looking thing, not meaningful on its own
 
---
+<!-- tokens are kind of "I know it when I see it" to an extent -- there isn't as far as I know a general spec for
+"x can be a token"; it's just "the special bytes that the server knows how to care about for token-y reasons" -->
+
+---
 
 ## Some tokens
 
@@ -92,21 +98,27 @@ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.
 eyJzdWIiOiJhYmprbHNqZGZsa2EiLCJuYW1lIjoiSmFtZXMgUyIsImlhdCI6MTUxNjIzOTAyMn0.
 lFwutwLbDjwqKAJ0B_zrELX2lqomMeYzKINs9zQBNmI
 ```
+- maybe this surfing cat
+
+<img src="https://wp.usatodaysports.com/wp-content/uploads/sites/88/2020/06/screen-shot-2020-06-03-at-9.47.38-am.jpg" style="width:33%" />
 
 ---
 
 ## What other properties would be nice?
 
-- `*waves hands*` _meaningful_ (i.e. "userId=james", not "😎🎉🚩🐻🎯")
+- `*waves hands*` _meaningful_
 - verifiable validity
 - safe from prying eyes
-- extensible (i.e. not so beholden to a rigid spec that we can't include information we care about)
+- extensible
 
 ---
 
 ## Pursuing token properties
 
 - meaningfulness: represent data from authentication / authorization domain in the token
+
+<!-- (i.e. "userId=james", not "😎🎉🚩🐻🎯") -->
+
 - validity: it should be possible to prove a token is a good token with (mostly) data contained in the token
 - security: data represented in the token should be legible only to its intended recipients
 - extensible: I should be able to add to the data representable in the token at some later time
@@ -130,6 +142,8 @@ lFwutwLbDjwqKAJ0B_zrELX2lqomMeYzKINs9zQBNmI
 
 ---
 
+class: center, middle
+
 ## Meaningfulness
 
 ---
@@ -139,12 +153,22 @@ lFwutwLbDjwqKAJ0B_zrELX2lqomMeYzKINs9zQBNmI
 - going to build a serialization format from scratch that's very simple
 
 ```scala mdoc:silent
-case class Foo(x: Int, y: String, z: List[Int])
-Foo(3, "abc", List(3, 4, 5))
-// => goal is: x=3;y="abc";z=[3,4,5]
+sealed abstract class UserRole(repr: String) {
+  override def toString(): String = repr
+}
+
+case object Admin extends UserRole("admin")
+case object VanillaUser extends UserRole("vanilla")
+
+case class AuthInfo(role: UserRole, x: Int, y: String, z: List[Int])
+val authInfo = AuthInfo(VanillaUser, 3, "abc", List(3, 4, 5))
+// => serialization goal is: x=3;y="abc";z=[3,4,5]
 ```
 
-- then GZip it to make it small
+<!-- x / y / z are like arbitrary metadata that we need to include with our auth info,
+role is meaningful to the application somehow -->
+
+- then Deflate it to make it small
 - then base64 encode it to make it look nice and token-y
 
 ---
@@ -175,6 +199,10 @@ trait BSEncoder[A] {
 }
 ```
 
+<!-- again, we don't really have strong boundaries we can put around what a token is --
+this typeclass says basically "it's a string serialization format for some auth data A", but anything
+can be auth data -->
+
 ---
 
 ### Meaningfulness
@@ -190,10 +218,16 @@ implicit val encInt: BSEncoder[Int] = { (a: Int) => s"$a" } // 🤔
 
 - repetitive! 
 
+---
+
+### Meaningfulness
+
 ```scala mdoc:silent
 object BSEncoder {
   def apply[A](implicit ev: BSEncoder[A]): BSEncoder[A] = ev
-  def forShow[A: Show]: BSEncoder[A] = new BSEncoder[A] { def encode(a: A) = Show[A].show(a) }
+  def forShow[A: Show]: BSEncoder[A] = new BSEncoder[A] {
+    def encode(a: A) = Show[A].show(a)
+  }
   def forTuple[A: BSEncoder]: BSEncoder[(String, A)] = { case (s, a) =>
     s"$s=${BSEncoder[A].encode(a)}"
   }
@@ -206,6 +240,7 @@ object BSEncoder {
 - and for convenience, we'll make it derivable for case classes (not shown)
 
 ```scala mdoc:invisible
+implicit val encUserRole: BSEncoder[UserRole] = { role => s""""${role.toString}"""" }
 implicit val encString: BSEncoder[String] = { (a: String) => s""""$a"""" }
 implicit def forList[A: BSEncoder]: BSEncoder[List[A]] = (a: List[A]) =>
   a.map(BSEncoder[A].encode(_)).mkString("[", ",", "]")
@@ -239,7 +274,7 @@ implicit def genericEncoder[A, R](implicit
 ```
 
 ```scala mdoc
-BSEncoder[Foo].encode(Foo(3, "abc", List(3, 4, 5)))
+BSEncoder[AuthInfo].encode(authInfo)
 ```
 
 ---
@@ -247,8 +282,8 @@ BSEncoder[Foo].encode(Foo(3, "abc", List(3, 4, 5)))
 ### Meaningfulness
 
 - _we've done it_
-- we can take arbitrary domain information in case classes and represent it in our token in a super advanced serialization format
-- so for token format we can just GZip it and we're good to go
+- we can take arbitrary domain information in case classes and represent it in our token in a super cool and good serialization format
+- so for token format we can just Deflate it and Base64 encode it and we're good to go
 
 ```scala mdoc
 def toPlainTextToken[T: BSEncoder](value: T): String = {
@@ -262,16 +297,16 @@ def toPlainTextToken[T: BSEncoder](value: T): String = {
   Base64.getEncoder().encodeToString(outArray.take(count))
 }
 
-toPlainTextToken(Foo(3, "abc", List(3, 4, 5)))
+toPlainTextToken(authInfo)
 ```
 
 ---
 
 ### Meaningfulness
 
-- we've _almost_ done it
-- also have to be able to decode
-- going to wave hands and say "trust me it's real / works" for decoding, which it turns out is *way harder* than encoding
+- we've _almost_ done it -- we also have to be able to decode
+
+<!-- going to wave hands and say "trust me it's real / works" for decoding, which it turns out is *way harder* than encoding -->
 
 ```scala mdoc:invisible
 // in practice we'd want to model more specific kinds of decode errors,
@@ -323,10 +358,15 @@ object Parseable {
       value <- Parseable[T].parser
     } yield (fieldName, value)
   }
+
+  implicit def parseableUserRole: Parseable[UserRole] = instance {
+    Parser
+      .fromStringMap(Map("admin" -> Admin, "vanilla" -> VanillaUser))
+      .between(Parser.char('"'), Parser.char('"'))
+  }
 }
 
 trait BSDecoder[T] {
-  // works on foo=bar;baz=qux pairs
   def decode(s: String): ValidatedNel[DecodeError, T]
 }
 
@@ -357,6 +397,8 @@ object BSDecoder {
 
   implicit def listDecoder[T: Parseable] = forParseable[List[T]]
 
+  implicit def userRoleDecoder = forParseable[UserRole]
+
   implicit def hnilDecoder: BSDecoder[HNil] = {
     case "" => Validated.valid(HNil)
     case s =>
@@ -378,7 +420,7 @@ object BSDecoder {
             Validated.invalidNel(DecodeError.invalid("failed to parse"))
           case Right(("", result)) =>
             if (result._1 != witness.value.name) {
-              Validated.invalidNel(DecodeError.invalid("names don't match"))
+              Validated.invalidNel(DecodeError.invalid(s"names don't match: ${result._1}, expected ${witness.value.name}"))
             } else {
               Validated.valid(
                 (witness.value ->> result._2)
@@ -412,15 +454,21 @@ object BSDecoder {
 ```
 
 ```scala mdoc
-BSEncoder[Foo].encode(Foo(3, "abc", List(3, 4, 5)))
+BSEncoder[AuthInfo].encode(authInfo)
 
-BSDecoder[Foo].decode(BSEncoder[Foo].encode(Foo(3, "abc", List(3, 4, 5))))
+BSDecoder[AuthInfo].decode("role=\"vanilla\";badFieldName=3;y=\"abc\";z=[3,4,5]")
+
+BSDecoder[AuthInfo].decode(BSEncoder[AuthInfo].encode(authInfo))
 ```
 
 ---
 
 ## Meaningfulness
 
+<!-- decoding has a lot more that can go wrong -- the base64 decoding can fail if the string
+is bad, the bytes might not represent a deflate-compressed object, and after that we can still
+fail to decode; fortunately we're functional programmers and have nice tools available for
+composing things that might fail -->
 ```scala mdoc
 def fromPlainTextToken[T: BSDecoder](token: String): ValidatedNel[DecodeError, T] = {
   Either
@@ -437,13 +485,12 @@ def fromPlainTextToken[T: BSDecoder](token: String): ValidatedNel[DecodeError, T
     }
     .toValidatedNel
     .andThen { s => {
-      println(s)
       BSDecoder[T].decode(s)
     }
-   }
+  }
 }
 
-fromPlainTextToken[Foo](toPlainTextToken(Foo(3, "abc", List(3, 4, 5))))
+fromPlainTextToken[AuthInfo](toPlainTextToken(authInfo))
 ```
 
 ---
@@ -498,7 +545,7 @@ anyway -->
 // it should go without saying that you should absolutely not have this hardcoded in your
 // codebase in real life, but I'm including this in screaming case in case some copy-pasta
 // happens in your or future-me's work anyway --
-// READ THIS FROM A GITIGNORED FILE OR CONFIG
+// READ THIS FROM A GITIGNORED FILE OR CONFIG, ALSO THIS IS A TERRIBLE KEY
 val superSecretSigningString = "very secret string key"
 val keyBytes = superSecretSigningString.getBytes(StandardCharsets.UTF_8)
 val alg = "HmacSHA256"
@@ -512,9 +559,14 @@ def sign(s: String): String = {
 }
 ```
 
+<!-- this sign function doesn't know anything about token-ness, it just signs arbitrary strings -->
+
 ---
 
 ## Validity
+
+<!-- this function for creating signed tokens on the other hand knows that we're able to from
+from T => our special magic token string serialization format, which is what we want to sign -->
 
 ```scala mdoc
 def createSignedToken[T: BSEncoder](payload: T): String = {
@@ -533,18 +585,23 @@ def verifySignedToken[T: BSDecoder](token: String, signature: String): Validated
 }
 ```
 
+<!-- again we have kind of a lot of things that can go wrong here --
+the signature might be invalid for the string that happens to kick off the token, but not every
+validly signed string is a valid token, so once again we have our nice ValidatedNel to help out
+and indicate that lots of things go wrong to anyone who might be trying to use this method -->
+
 ---
 
 ## Validity
 
 ```scala mdoc
-val signed = createSignedToken(Foo(3, "omg", List(19, 23, 37)))
+val signed = createSignedToken(authInfo)
 val Array(token, signature) = signed.split("\\.")
 
-verifySignedToken[Foo](token, signature)
+verifySignedToken[AuthInfo](token, signature)
 
-verifySignedToken[Foo](
-  toPlainTextToken(Foo(3, "oh no", List(19, 23, 37))),
+verifySignedToken[AuthInfo](
+  toPlainTextToken(AuthInfo(VanillaUser, 3, "oh no", List(19, 23, 37))),
   signature
 )
 ```
@@ -586,6 +643,9 @@ class: center, middle
   secret for encryption as well
 - if someone else is required to consume the information, then we need to encrypt with _their_ public key
 - in this case we'll pretend we're encrypting for some third party, but we'll happen to know the public and private keys
+
+<!-- "intended recipients" and "the wrong hands" are both doing a lot of work here; who those recipients are and who has
+the right hands will depend on the architecture of the token producers/consumers -->
 
 ---
 
@@ -650,7 +710,11 @@ so we're definitely in the "message from us to future us" scenario; however, the
 the signature validity check has to occur in the same application as the decryption e.g. if several
 different services are creating signed tokens and encrypting them to this server's public key. there's
 no reason in that case for our decrypter to know anything about what kind of token to expect, it only
-needs to know how to decrypt the incoming data. -->
+needs to know how to decrypt the incoming data.
+
+also we've now added "decryption could fail" to the list of things that can go wrong while
+recovering auth info from the token. decoding is fun!
+-->
 
 ```scala mdoc
 def decryptToken[T: BSDecoder](token: String): ValidatedNel[DecodeError, T] = {
@@ -676,9 +740,9 @@ def decryptToken[T: BSDecoder](token: String): ValidatedNel[DecodeError, T] = {
 - round trip:
 
 ```scala mdoc
-val payload = Foo(28, "asdf", List(1, 2, 3, 4))
+val payload = AuthInfo(Admin, 28, "asdf", List(1, 2, 3, 4))
 createEncryptedToken(payload)
-decryptToken[Foo](createEncryptedToken(payload))
+decryptToken[AuthInfo](createEncryptedToken(payload))
 ```
 
 - proof that decryption will fail with a token either encrypted by a different
@@ -725,15 +789,31 @@ decryptToken[Foo](createEncryptedToken(payload))
 --
 
 - way less flexible:
-  - BSWT support: HMACSHA256 only for signing, RSA 1024 bit key only for encryption, key must be present at initialization
+  - BSWT support: HMACSHA256 only for signing, RSA 2048 bit key only for encryption, key must be present at initialization
   - JWT support: big list of signing algorithms directed by header, big list of encryption algorithms directed by encryption header, support for multiple keys, support for public keys from URL
+
+<!-- why does crypto inflexibility matter --
+cryptographic arms race. hashing and encryption algorithms get defeated over time as computers get better individually /
+as new attacks are discovered / as computational revolutions occur:
+
+"Shor's algorithm can be used to break elliptic curve cryptography by computing discrete logarithms on a hypothetical quantum
+computer. The latest quantum resource estimates for breaking a curve with a 256-bit modulus (128-bit security level)
+are 2330 qubits and 126 billion Toffoli gates.[43] In comparison, using Shor's algorithm to break the RSA
+algorithm requires 4098 qubits and 5.2 trillion Toffoli gates for a 2048-bit RSA key, suggesting that ECC is an easier
+target for quantum computers than RSA. All of these figures vastly exceed any quantum computer that has ever been built,
+and estimates place the creation of such computers at a decade or more away."
+
+But also late 2021 -- IBM Eagle https://research.ibm.com/blog/127-qubit-quantum-processor-eagle gets to 127, up from 66
+in  Zuchongzhi 2 (also late 2021) and 53 in Google Sycamore in 2019.
+-->
 
 --
 
 - more precise expectations:
   - JWT checks token validity (signature is good, payload is JSON of any variety)
   - BSWT checks token validity + domain validity (signature is good, payload matches shape required by domain type)
-  - but [tsec](https://jmcardon.github.io/tsec/docs/http4s/auth-jwt.html) also has explicit expectations about types
+
+<!-- tsec https://jmcardon.github.io/tsec/docs/http4s/auth-jwt.html also has explicit expectations about types -->
 
 <!-- similar in Servant if you use servant auth -- there's a typeclass for "I expect to be able to decode this from
 the payload of a JWT" which you can derive for free with ToJSON / FromJSON instances, and it's required on any route
@@ -744,18 +824,22 @@ with JWT auth in its type -->
 - barely a web token since maybe not url-safe 🤷🏻‍♂️
 
 <!-- depending on input -- some inputs will give us slashes or other unsafe characters in the encoded token;
-this isn't a problem unless you're using the token in a query parameter, but still -->
+this isn't a problem unless you're using the token in a query parameter, but still, and also can be handled by
+a string replace on the resulting string -->
 
 ---
 
-# disclaimers / requests
+# disclaimers / requests / acknowledgements
+
+Components of JWTs and considerations about validation and encryption were sourced from the [Auth0 JWT book](https://auth0.com/resources/ebooks/jwt-handbook),
+which you can have for free if you're willing to receive some marketing emails for the rest of your life.
 
 All Pokemon imagery via Bulbapedia, where the authors believe use of the imagery is covered under fair use.
 I believe the same about the use of the imagery here but I am not a lawyer.
 
 Also cryptography is really hard? If you think your'e really solid on explaining different cryptosystems and
 situations where you may want to prioritize different features, uhhh maybe there should be a mentoring session
-on that (I'd sign up). 
+on that (I'd sign up).
 
 ---
 
