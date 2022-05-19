@@ -17,7 +17,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
         usage
     else
         nix-shell --run \
-            sbt 'byo-web-token/mdoc;decline-for-ciris/mdoc'
+            'sbt "byo-web-token/mdoc;decline-for-ciris/mdoc"'
         cp -r byo-web-token/docs presentations/byo-web-token
         cp -r decline-for-ciris/docs presentations/decline-for-ciris
     fi
