@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+set -e
+
+if [[ -n "${DEBUG}" ]]; then
+    set -x
+fi
+
+function usage() {
+    echo -n \
+        "Usage: $(basename "$0")
+Build docs for available presentations and move them to a shared location"
+}
+
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    if [ "${1:-}" = "--help" ]; then
+        usage
+    else
+        nix-shell --run \
+            sbt 'byo-web-token/mdoc;decline-for-ciris/mdoc'
+        cp -r byo-web-token/docs presentations/byo-web-token
+        cp -r decline-for-ciris/docs presentations/decline-for-ciris
+    fi
+fi

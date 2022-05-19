@@ -1,0 +1,23 @@
+name: Build and Deploy
+on:
+  push:
+    branches:
+      - feature/js/deploy-to-gh-pages
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - uses: cachix/install-nix-action@v13
+        with:
+          nix_path: nixpkgs=channel:nixos-21.11
+
+      - name: Build docs
+        run: ./scripts/docs
+
+      - name: Deploy 🚀
+        uses: JamesIves/github-pages-deploy-action@v4.3.3
+        with:
+          branch: gh-pages # The branch the action should deploy to.
+          folder: presentations # The folder the action should deploy.
