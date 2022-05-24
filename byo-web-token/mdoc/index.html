@@ -647,15 +647,18 @@ class: center, middle
 <!-- "intended recipients" and "the wrong hands" are both doing a lot of work here; who those recipients are and who has
 the right hands will depend on the architecture of the token producers/consumers -->
 
----
+<!-- we're the only expected consumer of the information when, for example, this is an auth service that's responsible for
+encrypting the message _and_ responsible for decrypting it to do something with the auth info -->
 
-## Token security
+<!-- we're _not_ the only expected consumer of the message when, for example, this is an auth service, and whoever we're issuing
+the token to needs to be able to read and do something useful with the auth info; however, in such a case, they _could_
+authenticate with the token and receive plain text of the non-sensitive info, but if there's sensitive info that the client needs
+to be able to read, then they should receive that encrypted -->
 
-- we can encrypt at different points and different combinations of things --
-- things to encrypt: payload only, signature only, both individually, entire combined token string
-- for convenience with other methods I'll encrypt the whole token string here
-- also for convenience / variety I'll do asymmetric encryption here, though whether it's necessary
-  or helpful depends on the architecture
+<!-- basically, what kind of cryptosystem we want to use for encrypting the token depends on where we need to plain text to
+be legible -- we can use a shared key for encryption when we're sharing with ourselves / the plaintext is never supposed to leave
+the environment where the ciphertext is created; we should use use the recipient's public key when the plaintext needs to be
+legible _somewhere else_ -->
 
 ---
 
@@ -816,8 +819,11 @@ in  Zuchongzhi 2 (also late 2021) and 53 in Google Sycamore in 2019.
 <!-- tsec https://jmcardon.github.io/tsec/docs/http4s/auth-jwt.html also has explicit expectations about types -->
 
 <!-- similar in Servant if you use servant auth -- there's a typeclass for "I expect to be able to decode this from
-the payload of a JWT" which you can derive for free with ToJSON / FromJSON instances, and it's required on any route
+the payload of a JWT" which you can derive for free with aeson ToJSON / FromJSON instances, and it's required on any route
 with JWT auth in its type -->
+
+<!-- so basically if you're using a library that lets you follow the "parse, don't validate" directive, you'll probably
+have this feature available with JWT handling -->
 
 --
 
@@ -837,9 +843,13 @@ which you can have for free if you're willing to receive some marketing emails f
 All Pokemon imagery via Bulbapedia, where the authors believe use of the imagery is covered under fair use.
 I believe the same about the use of the imagery here but I am not a lawyer.
 
-Also cryptography is really hard? If you think your'e really solid on explaining different cryptosystems and
+Also cryptography is really hard? If you think you're really solid on explaining different cryptosystems and
 situations where you may want to prioritize different features, uhhh maybe there should be a mentoring session
 on that (I'd sign up).
+
+<!-- I discovered in working on this that Java crypto libraries and procedures are for me sort of copy-paste and
+don't think too hard about it. It would be nice to feel like I'm making more deliberate choices than I feel like
+right now. -->
 
 ---
 
