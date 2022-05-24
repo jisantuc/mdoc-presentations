@@ -155,4 +155,5 @@ echo "${projectConfig}" >> build.sbt
 sbt "${titleSlug}/mdoc"
 
 git add "${titleSlug}"
+git add build.sbt
 git commit -m "${title}, first commit"
