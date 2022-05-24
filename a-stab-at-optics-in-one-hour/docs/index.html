@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>A STAB at Optics in One Hour</title>
+  <meta charset="utf-8">
+  <style>
+    @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+    @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+    @import url(https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic);
+
+    body {
+      font-family: 'Droid Serif', 'Helvetica';
+      /*line-height: 1.25em;*/
+    }
+
+    li {
+      margin: 10px 0;
+    }
+
+    h1,
+    h2,
+    h3 {
+      font-family: 'Yanone Kaffeesatz', 'Gill Sans';
+      font-weight: normal;
+    }
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .remark-code,
+    .remark-inline-code {
+      font-family: 'Ubuntu Mono', 'Consolas', 'Courier New';
+    }
+  </style>
+</head>
+
+<body>
+  <textarea id="source">
+
+class: center, middle
+
+# A STAB at Optics in One Hour
+James Santucci • `@jisantuc`
+
+@47Degrees / @jisantuc
+
+???
+
+Questions at the end
+
+---
+
+class: center, middle
+
+# A section title slide
+
+---
+
+## A normal slide
+
+---
+
+## A slide with evaluated code
+
+- point to a whole new database that lives somewhere else
+
+```scala
+// treat these as newtypes for non-empty strings
+type DatabaseUser = String
+type DatabaseHost = String
+type DatabasePassword = String
+
+case class DatabaseConfig(
+  dbUser: DatabaseUser,
+  dbHost: DatabaseHost,
+  dbPassword: DatabasePassword
+)
+```
+
+---
+
+## A slide with evaluated code with no output
+
+- command line args are similar to env variables
+
+```scala
+val serverOpt = "abcde"
+```
+
+---
+
+## A slide with evaluated code that is invisible in the presentation
+
+
+---
+
+class: center, middle
+
+# Thanks!
+
+Code and slides at `jisantuc/mdoc-presentations` on GitHub
+
+## Questions?
+
+ </textarea>
+  <script src="remark-latest.min.js">
+  </script>
+  <script>
+    var slideshow = remark.create();
+  </script>
+</body>
+
+</html>

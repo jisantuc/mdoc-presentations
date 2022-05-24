@@ -61,3 +61,13 @@ lazy val `byo-web-token` = project
     )
   )
   .enablePlugins(MdocPlugin)
+
+lazy val `a-stab-at-optics-in-one-hour` = project
+  .in(file("a-stab-at-optics-in-one-hour"))
+  .settings(moduleName := "a-stab-at-optics-in-one-hour")
+  .settings(baseSettings: _*)
+  .settings(mdocModule: _*)
+  .settings(
+    libraryDependencies ++= Seq()
+  )
+  .enablePlugins(MdocPlugin)
