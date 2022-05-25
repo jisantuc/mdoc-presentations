@@ -256,7 +256,7 @@ functions waiting for some Person value to oeprate on. _separation complete_. co
 val bigLifeChanges = moveUpTheStreet(8)
   .compose(acquirePet(Pet("Aristophanes", Dog, 4)))
   .compose(acquirePet(Pet("Aeschelus", Dog, 7)))
-// bigLifeChanges: Person => Person = scala.Function1$$Lambda$51247/693794206@3231eb45
+// bigLifeChanges: Person => Person = scala.Function1$$Lambda$6009/1926191059@4b536160
 
 bigLifeChanges(me)
 // res1: Person = Person(
@@ -288,7 +288,7 @@ def moveUpTheStreet2 = (howFar: Int) => (person: Person) =>
 val bigLifeChanges2 = acquirePet2(Pet("Aristophanes", Dog, 4))
   .compose(acquirePet2(Pet("Aeschelus", Dog, 7)))
   .compose(moveUpTheStreet2(8))
-// bigLifeChanges2: Person => Person = scala.Function1$$Lambda$51247/693794206@3339c66c
+// bigLifeChanges2: Person => Person = scala.Function1$$Lambda$6009/1926191059@27687d37
 
 bigLifeChanges2(me) == bigLifeChanges(me)
 // res2: Boolean = true

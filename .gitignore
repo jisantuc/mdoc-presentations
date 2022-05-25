@@ -24,3 +24,7 @@ project/.bloop/
 metals.sbt
 
 .vscode
+
+## built presentations
+presentations
+!presentations/index.html

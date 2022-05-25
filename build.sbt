@@ -2,6 +2,14 @@ addCommandAlias(
   "validate",
   List(
     "scalafmtCheckAll",
+    "build-docs"
+  ).mkString(";")
+)
+
+addCommandAlias(
+  "build-docs",
+  List(
+    "a-stab-at-optics-in-one-hour/mdoc",
     "byo-web-token/mdoc",
     "decline-for-ciris/mdoc"
   ).mkString(";")
