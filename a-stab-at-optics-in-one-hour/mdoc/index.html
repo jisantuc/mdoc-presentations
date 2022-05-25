@@ -70,6 +70,10 @@ Questions whenever, please interrupt
 _values_ (so can be passed around easily) and _composable_ (like function composition -- just gotta glue
 the types on the ends together and you're good to go) -->
 
+<!-- we'll see that in Scala at least we don't get the super slick magic syntax from this example, but
+that we can still compose these kinds of updates pretty easily
+-->
+
 ---
 
 ## Why optics?
@@ -112,7 +116,8 @@ class: center, middle
 
 ```scala mdoc:invisible
 import monocle._ 
-import monocle.macros.GenLens
+import monocle.std.either._
+import monocle.macros.{GenLens, GenPrism}
 import monocle.syntax.all._
 ```
 
@@ -296,6 +301,119 @@ specific goals;  -->
 class: center, middle
 
 # Simple optics on sum types
+
+---
+
+## What if things could fail?
+
+```scala
+val GenLens[Person](_.pets)
+```
+
+- `_.pets` will _always_ point to a list of pets
+- suppose we add the possibility of choice? e.g., focus on only the dogs?
+- but our type includes cats, so there's a possibility of failure
+
+---
+
+## What if things could fail?
+
+- let's model dogs slightly differently
+
+```scala mdoc
+sealed abstract class Doggo(val repr: String)
+case class Floof(color: String, age: Int) extends Doggo("floof")
+// chonks are timeless and don't have an age
+case class Chonk(roundness: Long) extends Doggo("chonk")
+```
+
+---
+
+## What if things could fail?
+
+```scala mdoc:fail
+val floofAgeLens = GenLens[Doggo]({
+  case Floof(_, age) => Some(age)
+  case _ => None
+})
+
+// or:
+// val floofAgeLens = GenLens[Doggo]({
+//  case Floof(_, age) => Right(age)
+//  case _ => Left("chonks exist outside of time")
+//})
+```
+
+![](https://media.giphy.com/media/57WEsxpUr3bTG/giphy.gif)
+
+---
+
+## Prisms -- paths with choice
+
+- lenses are the wrong tool
+- we want _prisms_
+
+```scala mdoc
+val floofPrism = GenPrism[Doggo, Floof]
+val floofAge = GenLens[Floof](_.age)
+val floof: Doggo = Floof("white", 4)
+val chonk: Doggo = Chonk(9000L)
+```
+
+```scala mdoc:fail
+floofPrism.andThen(floofAge).get(floof)
+```
+
+---
+
+## Prisms -- paths with choice
+
+```scala mdoc
+val _age = floofPrism.andThen(floofAge)
+
+_age.getOption(floof)
+
+_age.getOption(chonk)
+
+_age.modify(_ + 7)(floof)
+
+_age.modify(_ + 7)(chonk)
+```
+
+<!-- the type of _age is a Prism[Doggo, Int]; because the source type is a Doggo,
+modification is still Doggo => Doggo, so it succeeds as a no-op when we happen not
+to have a Floof -->
+
+---
+
+## Prisms -- paths with choice
+
+- same game, but with `Either` from the standard library:
+
+```scala mdoc
+val result: Either[String, Int] = Left("oh no")
+stdRight[String, Int].modify(_ + 2)(result)
+stdLeft[String, Int].modify(_.toUpperCase)(result)
+```
+
+---
+
+## Prisms -- paths with choice
+
+```scala mdoc:silent
+val whiteFloof: Either[String, Either[String, Either[String, Doggo]]] =
+  Right(Right(Right(Floof("white", 10))))
+
+stdRight[String, Either[String, Either[String, Doggo]]]
+  .andThen(stdRight[String, Either[String, Doggo]])
+  .andThen(stdRight[String, Doggo])
+  .andThen(_age)
+```
+
+<img src="https://media.giphy.com/media/3o7TKSha51ATTx9KzC/giphy.gif" />
+
+<!-- we can use prisms for all sorts of sum types, Either, Option, Ior, custom types...
+nested arbitrarily deeply 😎 -->
 
 ---
 

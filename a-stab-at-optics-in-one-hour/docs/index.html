@@ -70,6 +70,10 @@ Questions whenever, please interrupt
 _values_ (so can be passed around easily) and _composable_ (like function composition -- just gotta glue
 the types on the ends together and you're good to go) -->
 
+<!-- we'll see that in Scala at least we don't get the super slick magic syntax from this example, but
+that we can still compose these kinds of updates pretty easily
+-->
+
 ---
 
 ## Why optics?
@@ -256,7 +260,7 @@ functions waiting for some Person value to oeprate on. _separation complete_. co
 val bigLifeChanges = moveUpTheStreet(8)
   .compose(acquirePet(Pet("Aristophanes", Dog, 4)))
   .compose(acquirePet(Pet("Aeschelus", Dog, 7)))
-// bigLifeChanges: Person => Person = scala.Function1$$Lambda$6009/1926191059@4b536160
+// bigLifeChanges: Person => Person = scala.Function1$$Lambda$6340/104154620@5c8fa413
 
 bigLifeChanges(me)
 // res1: Person = Person(
@@ -288,7 +292,7 @@ def moveUpTheStreet2 = (howFar: Int) => (person: Person) =>
 val bigLifeChanges2 = acquirePet2(Pet("Aristophanes", Dog, 4))
   .compose(acquirePet2(Pet("Aeschelus", Dog, 7)))
   .compose(moveUpTheStreet2(8))
-// bigLifeChanges2: Person => Person = scala.Function1$$Lambda$6009/1926191059@27687d37
+// bigLifeChanges2: Person => Person = scala.Function1$$Lambda$6340/104154620@7a151158
 
 bigLifeChanges2(me) == bigLifeChanges(me)
 // res2: Boolean = true
@@ -338,6 +342,141 @@ specific goals;  -->
 class: center, middle
 
 # Simple optics on sum types
+
+---
+
+## What if things could fail?
+
+```scala
+val GenLens[Person](_.pets)
+```
+
+- `_.pets` will _always_ point to a list of pets
+- suppose we add the possibility of choice? e.g., focus on only the dogs?
+- but our type includes cats, so there's a possibility of failure
+
+---
+
+## What if things could fail?
+
+- let's model dogs slightly differently
+
+```scala
+sealed abstract class Doggo(val repr: String)
+case class Floof(color: String, age: Int) extends Doggo("floof")
+// chonks are timeless and don't have an age
+case class Chonk(roundness: Long) extends Doggo("chonk")
+```
+
+---
+
+## What if things could fail?
+
+```scala
+val floofAgeLens = GenLens[Doggo]({
+  case Floof(_, age) => Some(age)
+  case _ => None
+})
+
+// or:
+// val floofAgeLens = GenLens[Doggo]({
+//  case Floof(_, age) => Right(age)
+//  case _ => Left("chonks exist outside of time")
+//})
+// error: Illegal field reference ((x0$1: repl.MdocSession.App.Doggo) => x0$1 match {
+//   case (color: String, age: Int): repl.MdocSession.App.Floof(_, (age @ _)) => scala.Some.apply[Int](age)
+//   case _ => scala.None
+// }); please use _.field1.field2... instead
+// val floofAgeLens = GenLens[Doggo]({
+//                    ^
+```
+
+![](https://media.giphy.com/media/57WEsxpUr3bTG/giphy.gif)
+
+---
+
+## Prisms -- paths with choice
+
+- lenses are the wrong tool
+- we want _prisms_
+
+```scala
+val floofPrism = GenPrism[Doggo, Floof]
+// floofPrism: Prism[Doggo, Floof] = repl.MdocSession$App$$anon$7@bff786f
+val floofAge = GenLens[Floof](_.age)
+// floofAge: Lens[Floof, Int] = repl.MdocSession$App$$anon$8@2a64649e
+val floof: Doggo = Floof("white", 4)
+// floof: Doggo = Floof(color = "white", age = 4)
+val chonk: Doggo = Chonk(9000L)
+// chonk: Doggo = Chonk(roundness = 9000L)
+```
+
+```scala
+floofPrism.andThen(floofAge).get(floof)
+// error: value get is not a member of monocle.POptional[repl.MdocSession.App.Doggo,repl.MdocSession.App.Doggo,Int,Int]
+// did you mean left or set?
+// floofPrism.andThen(floofAge).get(floof)
+// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+```
+
+---
+
+## Prisms -- paths with choice
+
+```scala
+val _age = floofPrism.andThen(floofAge)
+// _age: POptional[Doggo, Doggo, Int, Int] = monocle.POptional$$anon$1@2f2de3d5
+
+_age.getOption(floof)
+// res6: Option[Int] = Some(value = 4)
+
+_age.getOption(chonk)
+// res7: Option[Int] = None
+
+_age.modify(_ + 7)(floof)
+// res8: Doggo = Floof(color = "white", age = 11)
+
+_age.modify(_ + 7)(chonk)
+// res9: Doggo = Chonk(roundness = 9000L)
+```
+
+<!-- the type of _age is a Prism[Doggo, Int]; because the source type is a Doggo,
+modification is still Doggo => Doggo, so it succeeds as a no-op when we happen not
+to have a Floof -->
+
+---
+
+## Prisms -- paths with choice
+
+- same game, but with `Either` from the standard library:
+
+```scala
+val result: Either[String, Int] = Left("oh no")
+// result: Either[String, Int] = Left(value = "oh no")
+stdRight[String, Int].modify(_ + 2)(result)
+// res10: Either[String, Int] = Left(value = "oh no")
+stdLeft[String, Int].modify(_.toUpperCase)(result)
+// res11: Either[String, Int] = Left(value = "OH NO")
+```
+
+---
+
+## Prisms -- paths with choice
+
+```scala
+val whiteFloof: Either[String, Either[String, Either[String, Doggo]]] =
+  Right(Right(Right(Floof("white", 10))))
+
+stdRight[String, Either[String, Either[String, Doggo]]]
+  .andThen(stdRight[String, Either[String, Doggo]])
+  .andThen(stdRight[String, Doggo])
+  .andThen(_age)
+```
+
+<img src="https://media.giphy.com/media/3o7TKSha51ATTx9KzC/giphy.gif" />
+
+<!-- we can use prisms for all sorts of sum types, Either, Option, Ior, custom types...
+nested arbitrarily deeply 😎 -->
 
 ---
 
