@@ -649,7 +649,30 @@ allWorks = over (each . works . each) toTitle authors
 - you'll also see a bunch of operator-y optic invocations instead, but if you check out
 - docs, you'll often be able to find the operators as "synonym for (op)"
 
-THE END
+-->
+
+---
+
+## Comparing Monocle and Haskell libs
+
+```scala mdoc
+authorsRoot.each.andThen(worksLens).each.getAll(authors)
+```
+
+```haskell
+authors ^.. (each . works . each)
+
+toListOf (each . works . each) authors
+
+{-
+["kintu","a girl is a body of water","watt","waiting for godot","the old drift"]
+-}
+```
+
+<!-- differences:
+- similar to modification, optic operation in scala is method on the optic (getAll) vs
+  toListOf function that takes an appropriate optic
+- also similarly, you can search "synonym for (^..)" to figure out the operator / toListOf
 -->
 
 ---

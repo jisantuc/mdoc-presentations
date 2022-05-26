@@ -260,7 +260,7 @@ functions waiting for some Person value to oeprate on. _separation complete_. co
 val bigLifeChanges = moveUpTheStreet(8)
   .compose(acquirePet(Pet("Aristophanes", Dog, 4)))
   .compose(acquirePet(Pet("Aeschelus", Dog, 7)))
-// bigLifeChanges: Person => Person = scala.Function1$$Lambda$6450/1802683729@592df426
+// bigLifeChanges: Person => Person = scala.Function1$$Lambda$6450/1802683729@1dd8c90
 
 bigLifeChanges(me)
 // res1: Person = Person(
@@ -292,7 +292,7 @@ def moveUpTheStreet2 = (howFar: Int) => (person: Person) =>
 val bigLifeChanges2 = acquirePet2(Pet("Aristophanes", Dog, 4))
   .compose(acquirePet2(Pet("Aeschelus", Dog, 7)))
   .compose(moveUpTheStreet2(8))
-// bigLifeChanges2: Person => Person = scala.Function1$$Lambda$6450/1802683729@7982fcc0
+// bigLifeChanges2: Person => Person = scala.Function1$$Lambda$6450/1802683729@1fd8be73
 
 bigLifeChanges2(me) == bigLifeChanges(me)
 // res2: Boolean = true
@@ -402,9 +402,9 @@ val floofAgeLens = GenLens[Doggo]({
 
 ```scala
 val floofPrism = GenPrism[Doggo, Floof]
-// floofPrism: Prism[Doggo, Floof] = repl.MdocSession$App$$anon$7@2102d721
+// floofPrism: Prism[Doggo, Floof] = repl.MdocSession$App$$anon$7@6f683995
 val floofAge = GenLens[Floof](_.age)
-// floofAge: Lens[Floof, Int] = repl.MdocSession$App$$anon$8@49c1791e
+// floofAge: Lens[Floof, Int] = repl.MdocSession$App$$anon$8@3b32de69
 val floof: Doggo = Floof("white", 4)
 // floof: Doggo = Floof(color = "white", age = 4)
 val chonk: Doggo = Chonk(9000L)
@@ -427,7 +427,7 @@ floofPrism.andThen(floofAge).get(floof)
 
 ```scala
 val _age = floofPrism.andThen(floofAge)
-// _age: POptional[Doggo, Doggo, Int, Int] = monocle.POptional$$anon$1@2a0dd39
+// _age: POptional[Doggo, Doggo, Int, Int] = monocle.POptional$$anon$1@53c63592
 
 _age.getOption(floof)
 // res6: Option[Int] = Some(value = 4)
@@ -522,17 +522,17 @@ val kvPairs: KV = Map("a" -> List(1, 2, 3), "b" -> List(4), "c" -> List(5))
 
 ```scala
 val rootMap = Iso.id[Map[String, List[Int]]]
-// rootMap: Iso[Map[String, List[Int]], Map[String, List[Int]]] = monocle.PIso$$anon$5@b51eee1
+// rootMap: Iso[Map[String, List[Int]], Map[String, List[Int]]] = monocle.PIso$$anon$5@714a8a25
 val rootList = Iso.id[List[Int]]
-// rootList: Iso[List[Int], List[Int]] = monocle.PIso$$anon$5@1ae835e8
+// rootList: Iso[List[Int], List[Int]] = monocle.PIso$$anon$5@f27987c
 
 val atA = rootMap.index("a")
-// atA: Optional[Map[String, List[Int]], List[Int]] = monocle.POptional$$anon$1@7cd417
+// atA: Optional[Map[String, List[Int]], List[Int]] = monocle.POptional$$anon$1@77717f77
 val atB = rootMap.index("b")
-// atB: Optional[Map[String, List[Int]], List[Int]] = monocle.POptional$$anon$1@4318834
+// atB: Optional[Map[String, List[Int]], List[Int]] = monocle.POptional$$anon$1@1579beae
 
 val thirdElem = rootList.index(2)
-// thirdElem: Optional[List[Int], Int] = monocle.Optional$$anon$3@1348b5
+// thirdElem: Optional[List[Int], Int] = monocle.Optional$$anon$3@30470586
 
 atA.andThen(thirdElem).getOption(kvPairs)
 // res13: Option[Int] = Some(value = 3)
@@ -550,13 +550,13 @@ atB.andThen(thirdElem).getOption(kvPairs)
 ```scala
 case class Contrived(inner: Either[String, KV])
 val innerLens = GenLens[Contrived](_.inner)
-// innerLens: Lens[Contrived, Either[String, KV]] = repl.MdocSession$App$$anon$9@5b8f7a2a
+// innerLens: Lens[Contrived, Either[String, KV]] = repl.MdocSession$App$$anon$9@3909f8a
 
 val optic = innerLens
   .andThen(stdRight[String, KV])
   .andThen(atA)
   .andThen(thirdElem)
-// optic: POptional[Contrived, Contrived, Int, Int] = monocle.POptional$$anon$1@3db5d120
+// optic: POptional[Contrived, Contrived, Int, Int] = monocle.POptional$$anon$1@7fe6d248
 
 optic.getOption(Contrived(Right(kvPairs)))
 // res15: Option[Int] = Some(value = 3)
@@ -589,7 +589,7 @@ val authorsRoot = Iso.id[List[Author]]
 
 ```scala
 val traversal = authorsRoot.each.andThen(worksLens).each
-// traversal: Traversal[List[Author], String] = monocle.PTraversal$$anon$1@354d8e8a
+// traversal: Traversal[List[Author], String] = monocle.PTraversal$$anon$1@27b28fd4
 
 val titleCased = traversal.modify(titleCase(_))(authors)
 // titleCased: List[Author] = List(
@@ -742,7 +742,37 @@ allWorks = over (each . works . each) toTitle authors
 - you'll also see a bunch of operator-y optic invocations instead, but if you check out
 - docs, you'll often be able to find the operators as "synonym for (op)"
 
-THE END
+-->
+
+---
+
+## Comparing Monocle and Haskell libs
+
+```scala
+authorsRoot.each.andThen(worksLens).each.getAll(authors)
+// res18: List[String] = List(
+//   "kintu",
+//   "a girl is a body of water",
+//   "watt",
+//   "waiting for godot",
+//   "the old drift"
+// )
+```
+
+```haskell
+authors ^.. (each . works . each)
+
+toListOf (each . works . each) authors
+
+{-
+["kintu","a girl is a body of water","watt","waiting for godot","the old drift"]
+-}
+```
+
+<!-- differences:
+- similar to modification, optic operation in scala is method on the optic (getAll) vs
+  toListOf function that takes an appropriate optic
+- also similarly, you can search "synonym for (^..)" to figure out the operator / toListOf
 -->
 
 ---
