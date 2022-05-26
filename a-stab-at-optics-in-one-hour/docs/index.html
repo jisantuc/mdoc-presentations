@@ -260,7 +260,7 @@ functions waiting for some Person value to oeprate on. _separation complete_. co
 val bigLifeChanges = moveUpTheStreet(8)
   .compose(acquirePet(Pet("Aristophanes", Dog, 4)))
   .compose(acquirePet(Pet("Aeschelus", Dog, 7)))
-// bigLifeChanges: Person => Person = scala.Function1$$Lambda$6340/104154620@5c8fa413
+// bigLifeChanges: Person => Person = scala.Function1$$Lambda$6450/1802683729@592df426
 
 bigLifeChanges(me)
 // res1: Person = Person(
@@ -292,7 +292,7 @@ def moveUpTheStreet2 = (howFar: Int) => (person: Person) =>
 val bigLifeChanges2 = acquirePet2(Pet("Aristophanes", Dog, 4))
   .compose(acquirePet2(Pet("Aeschelus", Dog, 7)))
   .compose(moveUpTheStreet2(8))
-// bigLifeChanges2: Person => Person = scala.Function1$$Lambda$6340/104154620@7a151158
+// bigLifeChanges2: Person => Person = scala.Function1$$Lambda$6450/1802683729@7982fcc0
 
 bigLifeChanges2(me) == bigLifeChanges(me)
 // res2: Boolean = true
@@ -402,9 +402,9 @@ val floofAgeLens = GenLens[Doggo]({
 
 ```scala
 val floofPrism = GenPrism[Doggo, Floof]
-// floofPrism: Prism[Doggo, Floof] = repl.MdocSession$App$$anon$7@bff786f
+// floofPrism: Prism[Doggo, Floof] = repl.MdocSession$App$$anon$7@2102d721
 val floofAge = GenLens[Floof](_.age)
-// floofAge: Lens[Floof, Int] = repl.MdocSession$App$$anon$8@2a64649e
+// floofAge: Lens[Floof, Int] = repl.MdocSession$App$$anon$8@49c1791e
 val floof: Doggo = Floof("white", 4)
 // floof: Doggo = Floof(color = "white", age = 4)
 val chonk: Doggo = Chonk(9000L)
@@ -419,13 +419,15 @@ floofPrism.andThen(floofAge).get(floof)
 // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ```
 
+<!-- prisms represent an attempted type narrow from A => B where B is a subtype of A -->
+
 ---
 
 ## Prisms -- paths with choice
 
 ```scala
 val _age = floofPrism.andThen(floofAge)
-// _age: POptional[Doggo, Doggo, Int, Int] = monocle.POptional$$anon$1@2f2de3d5
+// _age: POptional[Doggo, Doggo, Int, Int] = monocle.POptional$$anon$1@2a0dd39
 
 _age.getOption(floof)
 // res6: Option[Int] = Some(value = 4)
@@ -495,12 +497,157 @@ class: center, middle
 
 ---
 
+## Non-product / non-sum types
+
+- sometimes we don't have a nice clean ADT to work with, e.g.:
+
+```scala
+type KV = Map[String, List[Int]]
+val kvPairs: KV = Map("a" -> List(1, 2, 3), "b" -> List(4), "c" -> List(5))
+```
+
+- but we still want to be able to do things like focus on a key in a map,
+  focus on the nth element of an array, or focus on a map's values
+
+---
+
+## Optionals -- focusing on values that might not exist
+
+- For the `KV` above we can't create a `Lens[KV, List[Int]]` for every
+  string the value might have -- all we know about a value of type `KV` is that
+  it has string keys, but we don't know which ones
+- But that's all we need to know!
+- Similarly, for a `List[A]`, we can't make lenses for all the potential indices,
+  but it's enough to know that it's indexed by ints
+
+```scala
+val rootMap = Iso.id[Map[String, List[Int]]]
+// rootMap: Iso[Map[String, List[Int]], Map[String, List[Int]]] = monocle.PIso$$anon$5@b51eee1
+val rootList = Iso.id[List[Int]]
+// rootList: Iso[List[Int], List[Int]] = monocle.PIso$$anon$5@1ae835e8
+
+val atA = rootMap.index("a")
+// atA: Optional[Map[String, List[Int]], List[Int]] = monocle.POptional$$anon$1@7cd417
+val atB = rootMap.index("b")
+// atB: Optional[Map[String, List[Int]], List[Int]] = monocle.POptional$$anon$1@4318834
+
+val thirdElem = rootList.index(2)
+// thirdElem: Optional[List[Int], Int] = monocle.Optional$$anon$3@1348b5
+
+atA.andThen(thirdElem).getOption(kvPairs)
+// res13: Option[Int] = Some(value = 3)
+
+atB.andThen(thirdElem).getOption(kvPairs)
+// res14: Option[Int] = None
+```
+
+---
+
+## Optionals -- focusing on values that might not exist
+
+- it should be no surprise at this point that we can compose Optionals with other optics
+
+```scala
+case class Contrived(inner: Either[String, KV])
+val innerLens = GenLens[Contrived](_.inner)
+// innerLens: Lens[Contrived, Either[String, KV]] = repl.MdocSession$App$$anon$9@5b8f7a2a
+
+val optic = innerLens
+  .andThen(stdRight[String, KV])
+  .andThen(atA)
+  .andThen(thirdElem)
+// optic: POptional[Contrived, Contrived, Int, Int] = monocle.POptional$$anon$1@3db5d120
+
+optic.getOption(Contrived(Right(kvPairs)))
+// res15: Option[Int] = Some(value = 3)
+```
+
+---
+
+## Traversals -- focusing on collections
+
+- sometimes we don't want a specific element, but to do something with each element
+- e.g., add 1 to each of the ints in the `List[Int]` in a `KV`, or make casing consistent in a bunch of strings
+
+
+```scala
+case class Author(name: String, works: List[String])
+val authors = List(
+  Author("Jennifer Nansubuga Makumbi",
+         List("kintu", "a girl is a body of water")),
+  Author("Samuel Beckett", List("watt", "waiting for godot")),
+  Author("Namwali Serpell", List("the old drift"))
+)
+val worksLens = GenLens[Author](_.works)
+
+val authorsRoot = Iso.id[List[Author]]
+```
+
+---
+
+## Traversals -- focusing on collections
+
+```scala
+val traversal = authorsRoot.each.andThen(worksLens).each
+// traversal: Traversal[List[Author], String] = monocle.PTraversal$$anon$1@354d8e8a
+
+val titleCased = traversal.modify(titleCase(_))(authors)
+// titleCased: List[Author] = List(
+//   Author(
+//     name = "Jennifer Nansubuga Makumbi",
+//     works = List("Kintu", "A Girl Is A Body Of Water")
+//   ),
+//   Author(name = "Samuel Beckett", works = List("Watt", "Waiting For Godot")),
+//   Author(name = "Namwali Serpell", works = List("The Old Drift"))
+// )
+```
+
+---
+
+## Traversals -- focusing on collections
+
+- and again, we can also just view everything
+
+```scala
+traversal.getAll(titleCased)
+// res16: List[String] = List(
+//   "Kintu",
+//   "A Girl Is A Body Of Water",
+//   "Watt",
+//   "Waiting For Godot",
+//   "The Old Drift"
+// )
+```
+
+- and again, traversals compose with other optics, left as an exercise for the reader
+
+---
+
 # Roadmap
 
 - ~~simple optics on case classes~~
 - ~~simple optics on sum types~~
 - ~~indexed optics and traversals~~
 - API comparison -- Monocle and `microlens`
+
+---
+
+## A quick digression
+
+- all of these optics have _laws_ that they must follow, which is mainly useful for when
+  you write your own / don't use generated optics
+- [e.g.](https://www.optics.dev/Monocle/docs/optics/lens#laws):
+
+> In particular, a Lens must respect the getReplace law which states that if you get a value
+> `A` from `S` and replace it back in, the result is an object identical to the original one.
+> A side effect of this law is that replace must only update the `A` it points to, for example
+> it cannot increment a counter or modify another value.
+
+--
+
+- [lens laws](https://www.optics.dev/Monocle/docs/optics/lens#laws), [prism laws](https://www.optics.dev/Monocle/docs/optics/prism#prism-laws),
+  [optional laws](https://www.optics.dev/Monocle/docs/optics/optional#laws),
+  [traversal laws](https://www.optics.dev/Monocle/docs/optics/traversal#laws)
 
 ---
 
@@ -520,47 +667,83 @@ discussion of different optic encodings like `optics` would, API similar to Ed K
 
 ---
 
-class: center, middle
+## Comparing Monocle and Haskell libs
 
-# A section title slide
-
----
-
-## A normal slide
+![](https://imgs.xkcd.com/comics/cryptography.png)
 
 ---
 
-## A slide with evaluated code
+## Comparing Monocle and Haskell libs
 
-- point to a whole new database that lives somewhere else
+- setup: capitalize titles of works in structure like example above
 
-```scala
-// treat these as newtypes for non-empty strings
-type DatabaseUser = String
-type DatabaseHost = String
-type DatabasePassword = String
+```haskell
+data Author = Author { _name :: String
+                     , _works :: List[String] }
 
-case class DatabaseConfig(
-  dbUser: DatabaseUser,
-  dbHost: DatabaseHost,
-  dbPassword: DatabasePassword
-)
+-- generates name and works lenses
+makeLenses ''Author
+
+authors :: [Author]
+authors =
+  [ Author "Jennifer Nansubuga Makumbi" ["kintu", "a girl is a body of water"],
+    Author "Samuel Beckett" ["watt", "waiting for godot"],
+    Author "Namwali Serpell" ["the old drift"]
+  ]
 ```
 
+<!-- hopefully you'll agree that this is the same data as in the Scala example
+
+differences / similarities --
+
+makeLenses ''TypeName -- template haskell works like Scala macros, e.g. like the
+@Lenses macro annotation mentioned before that puts optics on companion objects,
+but with prefix-based generation inference (configurable)
+-->
+
 ---
 
-## A slide with evaluated code with no output
-
-- command line args are similar to env variables
+## Comparing Monocle and Haskell libs
 
 ```scala
-val serverOpt = "abcde"
+authorsRoot.each.andThen(worksLens).each.modify(titleCase(_))(authors)
+// res17: List[Author] = List(
+//   Author(
+//     name = "Jennifer Nansubuga Makumbi",
+//     works = List("Kintu", "A Girl Is A Body Of Water")
+//   ),
+//   Author(name = "Samuel Beckett", works = List("Watt", "Waiting For Godot")),
+//   Author(name = "Namwali Serpell", works = List("The Old Drift"))
+// )
 ```
 
----
+```haskell
+allWorks :: [Author]
+allWorks = over (each . works . each) toTitle authors
 
-## A slide with evaluated code that is invisible in the presentation
+-- alt:    (each . works . each) & over & authors
+-- alt2:   (each . works . each) %~ toTitle $ authors
+{-
+[ Author { _name = "Jennifer Nansubuga Makumbi"
+         , _works = ["Kintu","A Girl Is A Body Of Water"]}
+, Author { _name = "Samuel Beckett"
+         , _works = ["Watt","Waiting For Godot"]}
+, Author { _name = "Namwali Serpell"
+         , _works = ["The Old Drift"]}]
+-}
+```
 
+<!-- differences:
+
+- Scala is OO at its core, so modify is a method owned by optic objects
+- Haskell is FP at its core, so `over` is a function taking an optic as first arg
+- optics in microlens at least compose with standard (.) composition operator
+- optics in Scala compose with special `andThen`
+- you'll also see a bunch of operator-y optic invocations instead, but if you check out
+- docs, you'll often be able to find the operators as "synonym for (op)"
+
+THE END
+-->
 
 ---
 
