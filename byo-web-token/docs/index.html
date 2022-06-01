@@ -53,7 +53,7 @@ James Santucci • `@jisantuc`
 
 @47Degrees / @jisantuc
 
-Questions at the end
+Questions whenever you want, please interrupt or use raised hands feature
 
 ---
 
@@ -465,6 +465,13 @@ class: center, middle
 
 - _encryption_
 
+<!-- note you don't always need this! you should encrypt your token if:
+
+1. Your auth data contains some sensitive information
+2. You think your auth data _might_ contain some sensitive information in the future, and you
+don't want future you to have to deal with refactoring to add encryption.
+-->
+
 ---
 
 ## Token security
@@ -478,15 +485,21 @@ class: center, middle
 <!-- "intended recipients" and "the wrong hands" are both doing a lot of work here; who those recipients are and who has
 the right hands will depend on the architecture of the token producers/consumers -->
 
----
+<!-- we're the only expected consumer of the information when, for example, this is an auth service that's responsible for
+encrypting the message _and_ responsible for decrypting it to do something with the auth info -->
 
-## Token security
+<!-- we're _not_ the only expected consumer of the message when, for example, this is an auth service, and whoever we're issuing
+the token to needs to be able to read and do something useful with the auth info; however, in such a case, they _could_
+authenticate with the token and receive plain text of the non-sensitive info, but if there's sensitive info that the client needs
+to be able to read, then they should receive that encrypted -->
 
-- we can encrypt at different points and different combinations of things --
-- things to encrypt: payload only, signature only, both individually, entire combined token string
-- for convenience with other methods I'll encrypt the whole token string here
-- also for convenience / variety I'll do asymmetric encryption here, though whether it's necessary
-  or helpful depends on the architecture
+<!-- basically, what kind of cryptosystem we want to use for encrypting the token depends on where we need to plain text to
+be legible -- we can use a shared key for encryption when we're sharing with ourselves / the plaintext is never supposed to leave
+the environment where the ciphertext is created; we should use use the recipient's public key when the plaintext needs to be
+legible _somewhere else_ -->
+
+<!-- why use shared secret systems? they're _way faster_ (like two orders of magnitude according to the intro coursera
+cryptography course)-->
 
 ---
 
@@ -507,13 +520,19 @@ def makeKeys(size: Int = 2048): (PublicKey, PrivateKey) = {
 val (publicKey, privateKey) = makeKeys()
 // publicKey: PublicKey = Sun RSA public key, 2048 bits
 //   params: null
-//   modulus: 18853497145623737064232888373033532497961794444040143067902052656860184771380926362361201322195201703128507331455579785371369783199406766634254589300652994290011168854691196520222123386835603366532556935217315901726454809851283101516323869691915108985509888488976313205214153005118800853939977661412418596964626835189832221956731029464230140464744116529919637182723001511195267897612911729733293609285609071094051002962618471838731096440825042379141374508080237518600537858517539613886931322264218031673243141944609084694047554569189916286268372492035585087981512336219340782609238949495517939148172423173915693014819
+//   modulus: 22495188265380054523425880493978063747936713787541978793065904928254580648003112735670860954079215355658157991409406259886466056660177950571529691043317559464115935227940733035637610653767461876015629654481327682062635979959284952281459035981332877891909019829964276426305383394077621925570187424453341246918648534072482935824981830485368275769830228814645775644179828803681653117715852683275889474882024270349870739719717201337238060949679335349937585799373479161712368193222623422665314029167088904779988378517462554759901380205777832662208541229452482956523776174427110730943175751505705983581716662441660517546091
 //   public exponent: 65537
 // privateKey: PrivateKey = SunRsaSign RSA private CRT key, 2048 bits
 //   params: null
-//   modulus: 18853497145623737064232888373033532497961794444040143067902052656860184771380926362361201322195201703128507331455579785371369783199406766634254589300652994290011168854691196520222123386835603366532556935217315901726454809851283101516323869691915108985509888488976313205214153005118800853939977661412418596964626835189832221956731029464230140464744116529919637182723001511195267897612911729733293609285609071094051002962618471838731096440825042379141374508080237518600537858517539613886931322264218031673243141944609084694047554569189916286268372492035585087981512336219340782609238949495517939148172423173915693014819
-//   private exponent: 7421207346470780552146357345608527058759485653491975078546000768863728680704239702303003044214254823009995935571655579645470898838749048001340702811983235328126373238696748350278012680015839297594341688783452070080067057230778799301411521223771824564737455076523520328286456582892865184996103021674110236139726385316525373111427705085965986176687262287733400671438407382879077360719045391860228352770643135992678186773425952249479442730683292767277208201785511751507771084043860956039309889407349785802266645354193381259718613939670924954597746740526780729717544108695621567621893720031506416141756359490064456572537
+//   modulus: 22495188265380054523425880493978063747936713787541978793065904928254580648003112735670860954079215355658157991409406259886466056660177950571529691043317559464115935227940733035637610653767461876015629654481327682062635979959284952281459035981332877891909019829964276426305383394077621925570187424453341246918648534072482935824981830485368275769830228814645775644179828803681653117715852683275889474882024270349870739719717201337238060949679335349937585799373479161712368193222623422665314029167088904779988378517462554759901380205777832662208541229452482956523776174427110730943175751505705983581716662441660517546091
+//   private exponent: 5857117240039142017299223717125313636492242306950521478323337987636543695584557055121344756708542210185861543332928092813260551914937768719236197078950376652817100549759382768819448375663945091358022253445677641129694986984836633134425087965354902243733089924447417686779606363375506058225577585346778385300130250035918856673503337465402771305307096138044382355429592751176920373127847235087086151388901978898691589942939865884736411749675023959863156662369694493058926426411135638680696720498074108793207742025024597910939409193226622445125855286931146756169999929631895080607947806830430125828010888508183088035521
 ```
+
+<!-- why are we doing public key crypto here in a fake environment if it's slower?
+you're stuck with it! BSWT don't let you change your cryptosystem based on changing needs.
+in real life you might do envelope encryption, where the shared secret is asymmetrically
+encrypted (it's likely to be short-ish), and the payload itself is shared secret encrypted,
+but that's really unnecessary for this demo-->
 
 ---
 
@@ -587,7 +606,7 @@ val payload = AuthInfo(Admin, 28, "asdf", List(1, 2, 3, 4))
 //   z = List(1, 2, 3, 4)
 // )
 createEncryptedToken(payload)
-// res8: String = "JnKKuYelPJ0TwWkAVuKZsihCU6Hhslz4fY65ap+X5ut8t8Xavo7pOZrqGOLrG6sKPIZKAfYfrVrPr89YHXOpjKZutJh3itnRAONAEzfgvTfxwy8gdNiAXHLDIEgkTWp/ByXB120wAmuupUC3+m4wH0Ah4Wi6/m2/pVhVIh5wbmtdKSUwRa4g8TT4eMuPBDV+fz3oUgQqqb3FKfm/x3QwVKrnxqThu6tnQ3axEycSGyrElMlOUMrJYegxsG9q6o/yNxZzkO+84LBr3v0DQnXKrD3iHFoSrmr6Q89mqLWrFMafAwV5r4VFRUnwMXy8PjsnEzsqthlICnVs7N+SkTo2SA=="
+// res8: String = "kxh0XoG6oHE4Te5wsIKuVYntZj3e60j7tuM722S8ZRZQcIdIbxA8NmPeYPALfuJqn4OqLkdgHBd3eODgwRnb4dXqC9TTaiDoRB0jVqqo5wZZPvvlKX2oN1G2urYktgDshZfsjyuZsBAy9o7LJarIlWu0QUghZzSGh2A87ZY8isu42WSRPrdNUsJeXlFMNbPp/JAH77nAPqsjgCHAS0/nlKf6/qG1QIhlJJ6kPTOCWOWi2BVA6WswrfnKqoTtTmM2Caz5s1G19b2WdYmtZqAW4t2+xABwziwuOKFHddFJ060Y9ndTptUwWaa4uc29WO+QPNsfdNkIwV/EnsUub78D8w=="
 decryptToken[AuthInfo](createEncryptedToken(payload))
 // res9: ValidatedNel[DecodeError, AuthInfo] = Valid(
 //   a = AuthInfo(role = admin, x = 28, y = "asdf", z = List(1, 2, 3, 4))
@@ -665,8 +684,14 @@ in  Zuchongzhi 2 (also late 2021) and 53 in Google Sycamore in 2019.
 <!-- tsec https://jmcardon.github.io/tsec/docs/http4s/auth-jwt.html also has explicit expectations about types -->
 
 <!-- similar in Servant if you use servant auth -- there's a typeclass for "I expect to be able to decode this from
-the payload of a JWT" which you can derive for free with ToJSON / FromJSON instances, and it's required on any route
+the payload of a JWT" which you can derive for free with aeson ToJSON / FromJSON instances, and it's required on any route
 with JWT auth in its type -->
+
+<!-- so basically if you're using a library that lets you follow the "parse, don't validate" directive, you'll probably
+have this feature available with JWT handling -->
+
+<!-- also you're not flying totally blind on fields -- there are some standard fields called "registered fields" defined
+in RFC7519 section 4 https://datatracker.ietf.org/doc/html/rfc7519#section-4 -->
 
 --
 
@@ -686,9 +711,13 @@ which you can have for free if you're willing to receive some marketing emails f
 All Pokemon imagery via Bulbapedia, where the authors believe use of the imagery is covered under fair use.
 I believe the same about the use of the imagery here but I am not a lawyer.
 
-Also cryptography is really hard? If you think your'e really solid on explaining different cryptosystems and
+Also cryptography is really hard? If you think you're really solid on explaining different cryptosystems and
 situations where you may want to prioritize different features, uhhh maybe there should be a mentoring session
 on that (I'd sign up).
+
+<!-- I discovered in working on this that Java crypto libraries and procedures are for me sort of copy-paste and
+don't think too hard about it. It would be nice to feel like I'm making more deliberate choices than I feel like
+right now. -->
 
 ---
 

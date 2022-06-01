@@ -53,7 +53,7 @@ James Santucci • `@jisantuc`
 
 @47Degrees / @jisantuc
 
-Questions at the end
+Questions whenever you want, please interrupt or use raised hands feature
 
 ---
 
@@ -634,6 +634,13 @@ class: center, middle
 
 - _encryption_
 
+<!-- note you don't always need this! you should encrypt your token if:
+
+1. Your auth data contains some sensitive information
+2. You think your auth data _might_ contain some sensitive information in the future, and you
+don't want future you to have to deal with refactoring to add encryption.
+-->
+
 ---
 
 ## Token security
@@ -660,6 +667,9 @@ be legible -- we can use a shared key for encryption when we're sharing with our
 the environment where the ciphertext is created; we should use use the recipient's public key when the plaintext needs to be
 legible _somewhere else_ -->
 
+<!-- why use shared secret systems? they're _way faster_ (like two orders of magnitude according to the intro coursera
+cryptography course)-->
+
 ---
 
 ## Token security
@@ -678,6 +688,12 @@ def makeKeys(size: Int = 2048): (PublicKey, PrivateKey) = {
 
 val (publicKey, privateKey) = makeKeys()
 ```
+
+<!-- why are we doing public key crypto here in a fake environment if it's slower?
+you're stuck with it! BSWT don't let you change your cryptosystem based on changing needs.
+in real life you might do envelope encryption, where the shared secret is asymmetrically
+encrypted (it's likely to be short-ish), and the payload itself is shared secret encrypted,
+but that's really unnecessary for this demo-->
 
 ---
 
@@ -824,6 +840,9 @@ with JWT auth in its type -->
 
 <!-- so basically if you're using a library that lets you follow the "parse, don't validate" directive, you'll probably
 have this feature available with JWT handling -->
+
+<!-- also you're not flying totally blind on fields -- there are some standard fields called "registered fields" defined
+in RFC7519 section 4 https://datatracker.ietf.org/doc/html/rfc7519#section-4 -->
 
 --
 
