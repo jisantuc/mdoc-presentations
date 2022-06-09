@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>A STAB at Optics in One Hour</title>
+  <meta charset="utf-8">
+  <style>
+    @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+    @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+    @import url(https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic);
+
+    body {
+      font-family: 'Droid Serif', 'Helvetica';
+      /*line-height: 1.25em;*/
+    }
+
+    li {
+      margin: 10px 0;
+    }
+
+    h1,
+    h2,
+    h3 {
+      font-family: 'Yanone Kaffeesatz', 'Gill Sans';
+      font-weight: normal;
+    }
+
+    img {
+      width: 50%;
+      height: 50%;
+      object-fit: contain;
+    }
+
+    .remark-code,
+    .remark-inline-code {
+      font-family: 'Ubuntu Mono', 'Consolas', 'Courier New';
+    }
+  </style>
+</head>
+
+<body>
+  <textarea id="source">
+
+class: center, middle
+
+# A STAB at Optics in One Hour
+James Santucci • `@jisantuc`
+
+@47Degrees / @jisantuc
+
+???
+
+Questions whenever, please interrupt
+
+---
+
+## Why optics?
+
+[Haskell (Almost) Standard Libraries](https://leanpub.com/haskell-stdlibs), introduction to Ch. 10, Optics:
+
+> Modern languages like Scala, Kotlin, or Javascript (since ES6) force you to choose
+> between [immutability and mutability] at each declaration [...] Immutability is better overall:
+> you get more guaratees and easier asynchronous programming [...] However, this syntax is so, so sweet:
+>
+> `person.name.first = "Alex"`
+>
+> [...] It turns out this is a false dichotomy.
+
+<!-- general purpose toolkit for describing traversal and manipulation of complex objects that are
+_values_ (so can be passed around easily) and _composable_ (like function composition -- just gotta glue
+the types on the ends together and you're good to go) -->
+
+<!-- we'll see that in Scala at least we don't get the super slick magic syntax from this example, but
+that we can still compose these kinds of updates pretty easily
+-->
+
+---
+
+## Why optics?
+
+Understand [this blog post](https://chrispenner.ca/posts/traversal-systems):
+
+> A Traversal System allows you dive deeply into a piece of data and may allow
+> you to fetch, query, and edit the structure as you go while maintaining references
+> to other pieces of the structure to influence your work.
+
+<!-- we can glue optics together with other nice functional abstractions and become
+_very powerful_ -->
+
+---
+
+## Why optics?
+
+polymorphic _extreme sports_
+
+```haskell
+(<%~) :: LensLike ((,) b) s t a b -> (a -> b) -> s -> (b, t)
+```
+
+![](./mountain-bike-cat.png)
+
+---
+
+# Roadmap
+
+- simple optics on case classes
+- simple optics on sum types
+- indexed optics and traversals
+- API comparisons -- Monocle and `microlens`
+
+---
+
+class: center, middle
+
+# Simple optics on case classes
+
+```scala mdoc:invisible
+import monocle._ 
+import monocle.std.either._
+import monocle.macros.{GenLens, GenPrism}
+import monocle.syntax.all._
+```
+
+---
+
+## Lenses -- getters and setters
+
+```scala mdoc
+sealed abstract class AnimalType(val repr: String) {
+  override def toString: String = repr
+}
+case object Dog extends AnimalType("dog")
+case object Cat extends AnimalType("cat")
+
+case class Address(street: String, houseNumber: Int)
+case class Pet(name: String, _type: AnimalType, age: Int)
+case class Person(name: String, address: Address, pets: List[Pet])
+
+val me = Person("James", Address("Denver somewhere", 23), Nil)
+```
+
+---
+
+## Lenses -- getters and setters
+
+- congrats to me, I got a dog! (not in real life)
+
+```scala mdoc
+val dogOwningMe = me.copy(pets = List(Pet("Aristophanes", Dog, 4)))
+```
+
+--
+
+- congrats to me, I got another dog! (also not in real life)
+
+```scala mdoc
+val twoDogsMe = dogOwningMe.copy(pets = dogOwningMe.pets :+ Pet("Aeschelus", Dog, 7))
+```
+
+---
+
+## Lenses -- getters and setters
+
+- oh and I moved
+
+```scala mdoc
+val upTheStreet = twoDogsMe.copy(
+  address = twoDogsMe.address.copy(
+    houseNumber = twoDogsMe.address.houseNumber + 8
+  )
+)
+```
+
+---
+
+## Lenses -- getters and setters
+
+all at once:
+
+```scala mdoc
+me.copy(
+  pets = me.pets ++ List(Pet("Aristophanes", Dog, 4), Pet("Aeschelus", Dog, 7)),
+  address = me.address.copy(houseNumber = me.address.houseNumber + 8)
+)
+```
+
+<!-- `me` shows up four times in that update;
+also in the previous examples, I had to make sure that I used the right copy of me while I sequenced
+the updates, which is easy to mess up because everything conforms to the type -->
+
+<!-- without optics, _describe_ and _apply_ the change at the same time; this is a bit familiar to effect systems,
+where we want to separate description of effectful programs from their execution, but we don't have effects here -->
+
+<!-- what do we have instead? something like "describe the path to some data of interest, and separate that description
+from what we want to do when we get there" -->
+
+---
+
+## Lenses -- getters and setters
+
+```scala mdoc:silent
+val petsLens = GenLens[Person](_.pets)
+val addressLens = GenLens[Person](_.address)
+val houseNumberLens = GenLens[Address](_.houseNumber)
+
+def acquirePet(pet: Pet): Person => Person =
+  petsLens.modify(_ :+ pet)
+
+def moveUpTheStreet(howFar: Int): Person => Person =
+  addressLens.andThen(houseNumberLens).modify(_ + howFar)
+```
+
+<!-- what's up here -- we can ask Monocle to write lenses for us for case classes
+pretty easily by describing how to get to the field we care about, so for instance
+petsLens is a path from a Person to their List[Pet]
+
+.modify on a lens let's us apply an A => A function on whatever path is described by the
+lens
+
+we can compose paths, as long as they connect, e.g. in move up the street we follow the
+path described by addressLens, then the path from there to houseNumber, before applying
+the modification
+
+the resulting types of these path descriptions into Person objects just end up as
+functions waiting for some Person value to oeprate on. _separation complete_. cool! -->
+
+---
+
+## Lenses -- getters and setters
+
+```scala mdoc
+val bigLifeChanges = moveUpTheStreet(8)
+  .compose(acquirePet(Pet("Aristophanes", Dog, 4)))
+  .compose(acquirePet(Pet("Aeschelus", Dog, 7)))
+
+bigLifeChanges(me)
+```
+
+<!-- since we just end up with functions at the end, we can compose them -->
+
+---
+
+## Lenses -- getters and setters
+
+- alternate syntax:
+
+```scala mdoc
+val acquirePet2 = (pet: Pet) => (person: Person) =>
+  person.focus(_.pets).modify(_ :+ pet)
+
+def moveUpTheStreet2 = (howFar: Int) => (person: Person) =>
+  person.focus(_.address.houseNumber).modify(_ + howFar)
+
+val bigLifeChanges2 = acquirePet2(Pet("Aristophanes", Dog, 4))
+  .compose(acquirePet2(Pet("Aeschelus", Dog, 7)))
+  .compose(moveUpTheStreet2(8))
+
+bigLifeChanges2(me) == bigLifeChanges(me)
+```
+
+<!-- person.focus is a macro that creates the required Lens at compile time,
+but it works the same; argument orders here are carefully chosen for nice composition
+at the end, vals instead of defs because Scala maintains some differences in APIs
+for function values and methods created with def (e.g. with these vals, don't need the trailing
+_ to indicate a partially applied function) -->
+
+---
+
+## Lenses -- getters and setters
+
+- focused on updates so far, but we can also just view what's at a path instead, e.g.:
+
+```scala mdoc
+addressLens.andThen(houseNumberLens).get(me)
+```
+
+--
+
+- if you want, you can [generate all the lenses](https://www.optics.dev/Monocle/docs/optics/lens#lens-generation)
+  since no one likes writing boilerplate
+- maybe more useful in a library setting, since you're providing convenient syntax to end users rather than
+  creating and consuming lenses all in one go, e.g.,
+  [doobie](https://tpolecat.github.io/doobie/docs/14-Managing-Connections.html#customizing-transactors) provides
+  lenses for customizing transactor behavior
+
+<!-- that's more useful for library authors I think than applications, since in an application setting
+you know which specific lenses you care about creating / ad hoc providing via .focus to accomplish your
+specific goals;  -->
+
+---
+
+# Roadmap
+
+- ~~simple optics on case classes~~
+- simple optics on sum types
+- indexed optics and traversals
+- API comparisons -- Monocle and `microlens`
+
+---
+
+class: center, middle
+
+# Simple optics on sum types
+
+---
+
+## What if things could fail?
+
+```scala
+val GenLens[Person](_.pets)
+```
+
+- `_.pets` will _always_ point to a list of pets
+- suppose we add the possibility of choice? e.g., focus on only the dogs?
+- but our type includes cats, so there's a possibility of failure
+
+---
+
+## What if things could fail?
+
+- let's model dogs slightly differently
+
+```scala mdoc
+sealed abstract class Doggo(val repr: String)
+case class Floof(color: String, age: Int) extends Doggo("floof")
+// chonks are timeless and don't have an age
+case class Chonk(roundness: Long) extends Doggo("chonk")
+```
+
+---
+
+## What if things could fail?
+
+```scala mdoc:fail
+val floofAgeLens = GenLens[Doggo]({
+  case Floof(_, age) => Some(age)
+  case _ => None
+})
+
+// or:
+// val floofAgeLens = GenLens[Doggo]({
+//  case Floof(_, age) => Right(age)
+//  case _ => Left("chonks exist outside of time")
+//})
+```
+
+![](https://media.giphy.com/media/57WEsxpUr3bTG/giphy.gif)
+
+---
+
+## Prisms -- paths with choice
+
+- lenses are the wrong tool
+- we want _prisms_
+
+```scala mdoc
+val floofPrism = GenPrism[Doggo, Floof]
+val floofAge = GenLens[Floof](_.age)
+val floof: Doggo = Floof("white", 4)
+val chonk: Doggo = Chonk(9000L)
+```
+
+```scala mdoc:fail
+floofPrism.andThen(floofAge).get(floof)
+```
+
+<!-- prisms represent an attempted type narrow from A => B where B is a subtype of A -->
+
+---
+
+## Prisms -- paths with choice
+
+```scala mdoc
+val _age = floofPrism.andThen(floofAge)
+
+_age.getOption(floof)
+
+_age.getOption(chonk)
+
+_age.modify(_ + 7)(floof)
+
+_age.modify(_ + 7)(chonk)
+```
+
+<!-- the type of _age is a Prism[Doggo, Int]; because the source type is a Doggo,
+modification is still Doggo => Doggo, so it succeeds as a no-op when we happen not
+to have a Floof -->
+
+---
+
+## Prisms -- paths with choice
+
+- same game, but with `Either` from the standard library:
+
+```scala mdoc
+val result: Either[String, Int] = Left("oh no")
+stdRight[String, Int].modify(_ + 2)(result)
+stdLeft[String, Int].modify(_.toUpperCase)(result)
+```
+
+---
+
+## Prisms -- paths with choice
+
+```scala mdoc:silent
+val whiteFloof: Either[String, Either[String, Either[String, Doggo]]] =
+  Right(Right(Right(Floof("white", 10))))
+
+stdRight[String, Either[String, Either[String, Doggo]]]
+  .andThen(stdRight[String, Either[String, Doggo]])
+  .andThen(stdRight[String, Doggo])
+  .andThen(_age)
+```
+
+<img src="https://media.giphy.com/media/3o7TKSha51ATTx9KzC/giphy.gif" />
+
+<!-- we can use prisms for all sorts of sum types, Either, Option, Ior, custom types...
+nested arbitrarily deeply 😎 -->
+
+---
+
+# Roadmap
+
+- ~~simple optics on case classes~~
+- ~~simple optics on sum types~~
+- indexed optics and traversals
+- API comparisons -- Monocle and `microlens`
+
+---
+
+class: center, middle
+
+# Indexed optics and traversals
+
+---
+
+## Non-product / non-sum types
+
+- sometimes we don't have a nice clean ADT to work with, e.g.:
+
+```scala mdoc:silent
+type KV = Map[String, List[Int]]
+val kvPairs: KV = Map("a" -> List(1, 2, 3), "b" -> List(4), "c" -> List(5))
+```
+
+- but we still want to be able to do things like focus on a key in a map,
+  focus on the nth element of an array, or focus on a map's values
+
+---
+
+## Optionals -- focusing on values that might not exist
+
+- For the `KV` above we can't create a `Lens[KV, List[Int]]` for every
+  string the value might have -- all we know about a value of type `KV` is that
+  it has string keys, but we don't know which ones
+- But that's all we need to know!
+- Similarly, for a `List[A]`, we can't make lenses for all the potential indices,
+  but it's enough to know that it's indexed by ints
+
+```scala mdoc
+val rootMap = Iso.id[Map[String, List[Int]]]
+val rootList = Iso.id[List[Int]]
+
+val atA = rootMap.index("a")
+val atB = rootMap.index("b")
+
+val thirdElem = rootList.index(2)
+
+atA.andThen(thirdElem).getOption(kvPairs)
+
+atB.andThen(thirdElem).getOption(kvPairs)
+```
+
+---
+
+## Optionals -- focusing on values that might not exist
+
+- it should be no surprise at this point that we can compose Optionals with other optics
+
+```scala mdoc
+case class Contrived(inner: Either[String, KV])
+val innerLens = GenLens[Contrived](_.inner)
+
+val optic = innerLens
+  .andThen(stdRight[String, KV])
+  .andThen(atA)
+  .andThen(thirdElem)
+
+optic.getOption(Contrived(Right(kvPairs)))
+```
+
+---
+
+## Traversals -- focusing on collections
+
+- sometimes we don't want a specific element, but to do something with each element
+- e.g., add 1 to each of the ints in the `List[Int]` in a `KV`, or make casing consistent in a bunch of strings
+
+```scala mdoc:invisible
+def titleCase(s: String) =
+  s.split(' ').map(_.capitalize).mkString(" ")
+```
+
+```scala mdoc:silent
+case class Author(name: String, works: List[String])
+val authors = List(
+  Author("Jennifer Nansubuga Makumbi",
+         List("kintu", "a girl is a body of water")),
+  Author("Samuel Beckett", List("watt", "waiting for godot")),
+  Author("Namwali Serpell", List("the old drift"))
+)
+val worksLens = GenLens[Author](_.works)
+
+val authorsRoot = Iso.id[List[Author]]
+```
+
+---
+
+## Traversals -- focusing on collections
+
+```scala mdoc
+val traversal = authorsRoot.each.andThen(worksLens).each
+
+val titleCased = traversal.modify(titleCase(_))(authors)
+```
+
+---
+
+## Traversals -- focusing on collections
+
+- and again, we can also just view everything
+
+```scala mdoc
+traversal.getAll(titleCased)
+```
+
+- and again, traversals compose with other optics, left as an exercise for the reader
+
+---
+
+# Roadmap
+
+- ~~simple optics on case classes~~
+- ~~simple optics on sum types~~
+- ~~indexed optics and traversals~~
+- API comparison -- Monocle and `microlens`
+
+---
+
+## A quick digression
+
+- all of these optics have _laws_ that they must follow, which is mainly useful for when
+  you write your own / don't use generated optics
+- [e.g.](https://www.optics.dev/Monocle/docs/optics/lens#laws):
+
+> In particular, a Lens must respect the getReplace law which states that if you get a value
+> `A` from `S` and replace it back in, the result is an object identical to the original one.
+> A side effect of this law is that replace must only update the `A` it points to, for example
+> it cannot increment a counter or modify another value.
+
+--
+
+- [lens laws](https://www.optics.dev/Monocle/docs/optics/lens#laws), [prism laws](https://www.optics.dev/Monocle/docs/optics/prism#prism-laws),
+  [optional laws](https://www.optics.dev/Monocle/docs/optics/optional#laws),
+  [traversal laws](https://www.optics.dev/Monocle/docs/optics/traversal#laws)
+
+---
+
+class: center, middle
+
+# API comparison -- Monocle and `microlens`
+
+---
+
+## Comparing Monocle and Haskell libs
+
+- why bother? Googling for optics things frequently turns up Haskell libs
+- comparison in this case: [`microlens`](https://hackage.haskell.org/package/microlens)
+
+<!-- why microlens? mentioned in Haskell (Almost) Standard Libraries as go-to for optics at this point; doesn't require
+discussion of different optic encodings like `optics` would, API similar to Ed Kmett's big lens package -->
+
+---
+
+## Comparing Monocle and Haskell libs
+
+![](https://imgs.xkcd.com/comics/cryptography.png)
+
+---
+
+## Comparing Monocle and Haskell libs
+
+- setup: capitalize titles of works in structure like example above
+
+```haskell
+data Author = Author { _name :: String
+                     , _works :: List[String] }
+
+-- generates name and works lenses
+makeLenses ''Author
+
+authors :: [Author]
+authors =
+  [ Author "Jennifer Nansubuga Makumbi" ["kintu", "a girl is a body of water"],
+    Author "Samuel Beckett" ["watt", "waiting for godot"],
+    Author "Namwali Serpell" ["the old drift"]
+  ]
+```
+
+<!-- hopefully you'll agree that this is the same data as in the Scala example
+
+differences / similarities --
+
+makeLenses ''TypeName -- template haskell works like Scala macros, e.g. like the
+@Lenses macro annotation mentioned before that puts optics on companion objects,
+but with prefix-based generation inference (configurable)
+-->
+
+---
+
+## Comparing Monocle and Haskell libs
+
+```scala mdoc
+authorsRoot.each.andThen(worksLens).each.modify(titleCase(_))(authors)
+```
+
+```haskell
+allWorks :: [Author]
+allWorks = over (each . works . each) toTitle authors
+
+-- alt:    (each . works . each) & over & authors
+-- alt2:   (each . works . each) %~ toTitle $ authors
+{-
+[ Author { _name = "Jennifer Nansubuga Makumbi"
+         , _works = ["Kintu","A Girl Is A Body Of Water"]}
+, Author { _name = "Samuel Beckett"
+         , _works = ["Watt","Waiting For Godot"]}
+, Author { _name = "Namwali Serpell"
+         , _works = ["The Old Drift"]}]
+-}
+```
+
+<!-- differences:
+
+- Scala is OO at its core, so modify is a method owned by optic objects
+- Haskell is FP at its core, so `over` is a function taking an optic as first arg
+- optics in microlens at least compose with standard (.) composition operator
+- optics in Scala compose with special `andThen`
+- you'll also see a bunch of operator-y optic invocations instead, but if you check out
+- docs, you'll often be able to find the operators as "synonym for (op)"
+
+-->
+
+---
+
+## Comparing Monocle and Haskell libs
+
+```scala mdoc
+authorsRoot.each.andThen(worksLens).each.getAll(authors)
+```
+
+```haskell
+authors ^.. (each . works . each)
+
+toListOf (each . works . each) authors
+
+{-
+["kintu","a girl is a body of water","watt","waiting for godot","the old drift"]
+-}
+```
+
+<!-- differences:
+- similar to modification, optic operation in scala is method on the optic (getAll) vs
+  toListOf function that takes an appropriate optic
+- also similarly, you can search "synonym for (^..)" to figure out the operator / toListOf
+-->
+
+---
+
+class: center, middle
+
+# Thanks!
+
+Code and slides at `jisantuc/mdoc-presentations` on GitHub
+
+## Questions?
+
+---
+
+# Attributions
+
+- Mountain bike cat ([source](https://www.flickr.com/photos/zruda/3611699025), [license](https://creativecommons.org/licenses/by-nc-sa/2.0/))
+
+ </textarea>
+  <script src="remark-latest.min.js">
+  </script>
+  <script>
+    var slideshow = remark.create();
+  </script>
+</body>
+
+</html>

@@ -2,6 +2,14 @@ addCommandAlias(
   "validate",
   List(
     "scalafmtCheckAll",
+    "build-docs"
+  ).mkString(";")
+)
+
+addCommandAlias(
+  "build-docs",
+  List(
+    "a-stab-at-optics-in-one-hour/mdoc",
     "byo-web-token/mdoc",
     "decline-for-ciris/mdoc"
   ).mkString(";")
@@ -58,6 +66,19 @@ lazy val `byo-web-token` = project
       "com.chuusai" %% "shapeless" % "2.3.9",
       "org.typelevel" %% "cats-parse" % "0.3.7",
       "org.typelevel" %% "cats-core" % "2.7.0"
+    )
+  )
+  .enablePlugins(MdocPlugin)
+
+lazy val `a-stab-at-optics-in-one-hour` = project
+  .in(file("a-stab-at-optics-in-one-hour"))
+  .settings(moduleName := "a-stab-at-optics-in-one-hour")
+  .settings(baseSettings: _*)
+  .settings(mdocModule: _*)
+  .settings(
+    libraryDependencies ++= Seq(
+      "dev.optics" %% "monocle-core" % "3.1.0",
+      "dev.optics" %% "monocle-macro" % "3.1.0"
     )
   )
   .enablePlugins(MdocPlugin)
